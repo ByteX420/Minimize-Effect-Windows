@@ -322,9 +322,11 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.4.2
-            - **Clean MSVC build** — resolved all compiler and linker warnings across Debug and Release targets
-            - **Third-party warning suppression** — properly configured MSVC project options to suppress external ImGui and FreeType warnings without modifying third-party source files
+            ### Changes in 1.4.3
+            - **Public beta and RC downloads** — added an opt-in pre-release pipeline with downloadable GitHub release assets
+            - **Manual pre-release versions** — `BETA_VERSION` controls exact `beta.N` and `rc.N` releases without publishing on normal code pushes
+            - **Stable-safe release flow** — pre-releases keep their full version in About and never replace the latest stable update
+            - **Faster release startup** — pinned CI builds to MSVC v145 and removed the slow recursive toolset scan
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
