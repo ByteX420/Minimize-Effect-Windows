@@ -1,0 +1,23 @@
+# Changing BETA_VERSION on beta publishes exactly that public pre-release.
+# The build implementation lives in release.yml so stable and beta cannot drift.
+
+name: Beta Release
+
+on:
+  push:
+    branches: [beta]
+    paths:
+      - ".github/BETA_VERSION"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build + GitHub Pre-release
+    uses: ./.github/workflows/release.yml
+    with:
+      prerelease: true
+    permissions:
+      contents: write

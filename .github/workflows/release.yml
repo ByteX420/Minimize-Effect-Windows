@@ -1,16 +1,22 @@
-# Build Release x64 and publish/update a GitHub Release when the product version changes.
+# Build Release x64 and publish a stable or pre-release GitHub Release.
 #
 # Security model (no personal tokens in the repo):
 # - Uses only the job-scoped GITHUB_TOKEN (auto-injected by Actions).
 # - Never logs tokens; never stores PATs/secrets in source.
 # - Minimal permission: contents: write (create tags + release assets only).
-# - Runs only on push to `stable` (path-filtered) or manual dispatch — not on PRs/forks.
+# - Stable runs on `stable`; beta reuses this workflow through beta-release.yml.
+# - Neither release path runs on pull requests or forks.
 # - Fork PRs cannot publish releases with write access to this repo.
 #
-# How to cut a release:
+# Stable release:
 # 1. Bump MINIMIZE_* version macros in app/MinimizeEffect.rc
 # 2. Merge to `stable` and push
 # 3. This workflow builds MinimizeEffect.exe, zips, and creates/updates tag vX.Y.Z + Release asset
+#
+# Pre-release:
+# 1. Set the exact version in .github/BETA_VERSION
+# 2. Push dev to beta
+# 3. Only that version-file change triggers vX.Y.Z-beta.N / vX.Y.Z-rc.N
 
 name: Release
 
@@ -28,19 +34,28 @@ on:
         description: "Optional override (e.g. 1.0.1). Leave empty to read from app/MinimizeEffect.rc"
         required: false
         default: ""
+  workflow_call:
+    inputs:
+      prerelease:
+        description: "Build a numbered pre-release from the beta branch"
+        required: false
+        type: boolean
+        default: false
 
 # Least privilege for release publishing
 permissions:
   contents: write
 
 concurrency:
-  group: release-stable
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   build-and-release:
     name: Build + GitHub Release
-    if: github.ref == 'refs/heads/stable'
+    if: >-
+      (github.ref == 'refs/heads/stable' && !inputs.prerelease) ||
+      (github.ref == 'refs/heads/beta' && inputs.prerelease)
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -63,51 +78,108 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $override = "${{ github.event.inputs.force_version }}"
-          if ($override -and $override.Trim().Length -gt 0) {
-            $ver = $override.Trim().TrimStart('v', 'V')
-          } else {
-            $rc = Get-Content -Raw "app/MinimizeEffect.rc"
-            $m = [regex]::Match($rc, 'MINIMIZE_PRODUCT_VERSION_STR\s+"([^"\\]+)')
-            if (-not $m.Success) {
-              throw "Could not parse MINIMIZE_PRODUCT_VERSION_STR from app/MinimizeEffect.rc"
+          $isPrerelease = "${{ inputs.prerelease }}" -eq "true"
+          $channel = ""
+          $iteration = ""
+
+          if ($isPrerelease) {
+            $versionPath = ".github/BETA_VERSION"
+            if (-not (Test-Path -LiteralPath $versionPath)) {
+              throw "Missing $versionPath"
             }
-            $ver = $m.Groups[1].Value.Trim()
+            $ver = (Get-Content -Raw -LiteralPath $versionPath).Trim()
+            $match = [regex]::Match($ver, '^(\d+\.\d+\.\d+)-(beta|rc)\.(\d+)$')
+            if (-not $match.Success) {
+              throw "BETA_VERSION '$ver' must look like 1.5.0-beta.1 or 1.5.0-rc.1"
+            }
+            $baseVersion = $match.Groups[1].Value
+            $channel = $match.Groups[2].Value
+            $iteration = [int]$match.Groups[3].Value
+            if ($iteration -lt 1 -or $iteration -gt 65535) {
+              throw "Pre-release number must be between 1 and 65535"
+            }
+
+            # Re-running the same commit may reuse its release. Reusing a
+            # manually entered version for different code is rejected.
+            $tagRef = "refs/tags/v$ver"
+            $remoteTags = @(git ls-remote --tags origin $tagRef)
+            if ($LASTEXITCODE -ne 0) {
+              throw "Could not query $tagRef"
+            }
+            if ($remoteTags.Count -gt 0) {
+              $escapedRef = [regex]::Escape($tagRef)
+              $sameCommit = @(
+                $remoteTags | Where-Object { $_ -match "^${{ github.sha }}\s+$escapedRef$" }
+              )
+              if ($sameCommit.Count -eq 0) {
+                throw "v$ver already belongs to another commit. Increase BETA_VERSION."
+              }
+            }
+          } else {
+            $override = "${{ github.event.inputs.force_version }}"
+            if ($override -and $override.Trim().Length -gt 0) {
+              $ver = $override.Trim().TrimStart('v', 'V')
+            } else {
+              $rc = Get-Content -Raw "app/MinimizeEffect.rc"
+              $match = [regex]::Match($rc, 'MINIMIZE_PRODUCT_VERSION_STR\s+"([^"\\]+)')
+              if (-not $match.Success) {
+                throw "Could not parse MINIMIZE_PRODUCT_VERSION_STR from app/MinimizeEffect.rc"
+              }
+              $ver = $match.Groups[1].Value.Trim()
+            }
+            if ($ver -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
+              throw "Version '$ver' is not X.Y.Z (or X.Y.Z.W)"
+            }
+            $baseVersion = $ver
           }
-          if ($ver -notmatch '^\d+\.\d+\.\d+(\.\d+)?$') {
-            throw "Version '$ver' is not X.Y.Z (or X.Y.Z.W)"
-          }
+
           $tag = "v$ver"
+          "base_version=$baseVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Product version: $ver  (tag $tag)"
+          "prerelease=$($isPrerelease.ToString().ToLowerInvariant())" |
+            Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "channel=$channel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "iteration=$iteration" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Product version: $ver (tag $tag, prerelease=$isPrerelease)"
+
+      - name: Stamp pre-release version into Windows resources
+        if: inputs.prerelease
+        shell: pwsh
+        run: |
+          $path = "app/MinimizeEffect.rc"
+          $displayVersion = "${{ steps.version.outputs.version }}"
+          $baseParts = "${{ steps.version.outputs.base_version }}".Split('.')
+          $iteration = [int]"${{ steps.version.outputs.iteration }}"
+          $numericVersion = "$($baseParts[0]),$($baseParts[1]),$($baseParts[2]),$iteration"
+          $content = Get-Content -Raw -LiteralPath $path
+
+          $replacements = [ordered]@{
+            '(?m)^#define\s+MINIMIZE_FILE_VERSION\s+[\d, \t]+\r?$' =
+              "#define MINIMIZE_FILE_VERSION      $numericVersion"
+            '(?m)^#define\s+MINIMIZE_PRODUCT_VERSION\s+[\d, \t]+\r?$' =
+              "#define MINIMIZE_PRODUCT_VERSION   $numericVersion"
+            '(?m)^#define\s+MINIMIZE_FILE_VERSION_STR\s+"[^"]*"\r?$' =
+              "#define MINIMIZE_FILE_VERSION_STR  `"$displayVersion\0`""
+            '(?m)^#define\s+MINIMIZE_PRODUCT_VERSION_STR\s+"[^"]*"\r?$' =
+              "#define MINIMIZE_PRODUCT_VERSION_STR `"$displayVersion\0`""
+            '(?m)^FILEFLAGS\s+0x0L\r?$' =
+              "FILEFLAGS      VS_FF_PRERELEASE"
+          }
+          foreach ($entry in $replacements.GetEnumerator()) {
+            $updated = [regex]::Replace($content, $entry.Key, $entry.Value)
+            if ($updated -eq $content) {
+              throw "Could not stamp resource pattern: $($entry.Key)"
+            }
+            $content = $updated
+          }
+
+          $resolvedPath = (Resolve-Path -LiteralPath $path).Path
+          [IO.File]::WriteAllText($resolvedPath, $content, [Text.UTF8Encoding]::new($false))
+          Write-Host "Stamped Windows ProductVersion '$displayVersion' ($numericVersion, prerelease flag)"
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
-
-      - name: Resolve PlatformToolset
-        id: toolset
-        shell: pwsh
-        run: |
-          # Prefer v145 (VS 2026 / 18), fall back to v143 (VS 2022) on older images.
-          $candidates = @("v145", "v143", "v142")
-          $chosen = $null
-          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vswhere) {
-            $install = & $vswhere -latest -products * `
-              -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-              -property installationPath
-            if ($install) {
-              foreach ($ts in $candidates) {
-                $props = Get-ChildItem -Path $install -Recurse -Filter "Microsoft.Cpp.$ts.x64.props" `
-                  -ErrorAction SilentlyContinue | Select-Object -First 1
-                if ($props) { $chosen = $ts; break }
-              }
-            }
-          }
-          if (-not $chosen) { $chosen = "v145" }
-          "name=$chosen" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Write-Host "Using PlatformToolset=$chosen"
 
       - name: Restore MSVC compiler cache
         # Pinned action revision; installs a checksum-verified ccache >= 4.10
@@ -116,7 +188,7 @@ jobs:
         with:
           variant: ccache
           install: binary
-          key: release-${{ runner.os }}-${{ steps.toolset.outputs.name }}-x64
+          key: release-${{ runner.os }}-v145-x64
           max-size: 1G
           verbose: 1
 
@@ -143,21 +215,14 @@ jobs:
             throw "Could not locate the Visual C++ tools"
           }
 
-          $toolset = "${{ steps.toolset.outputs.name }}"
-          $versionPrefix = switch ($toolset) {
-            "v145" { "14.5" }
-            "v143" { "14.3" }
-            "v142" { "14.2" }
-            default { throw "Unsupported PlatformToolset '$toolset'" }
-          }
           $compiler = Get-ChildItem "$install\VC\Tools\MSVC" -Directory |
-            Where-Object Name -Like "$versionPrefix*" |
+            Where-Object Name -Like "14.5*" |
             Sort-Object { [version]$_.Name } -Descending |
             ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\cl.exe" } |
             Where-Object { Test-Path -LiteralPath $_ } |
             Select-Object -First 1
           if (-not $compiler) {
-            throw "Could not locate cl.exe for PlatformToolset=$toolset"
+            throw "Could not locate cl.exe for PlatformToolset=v145"
           }
 
           $wrapperDirectory = Join-Path $env:RUNNER_TEMP "ccache-msvc"
@@ -179,15 +244,14 @@ jobs:
       - name: Build optimized Release x64
         shell: pwsh
         run: |
-          $toolset = "${{ steps.toolset.outputs.name }}"
-          Write-Host "MSBuild PlatformToolset=$toolset CharacterSet=MultiByte (project defaults + shipping flags)"
+          Write-Host "MSBuild PlatformToolset=v145 CharacterSet=MultiByte (project defaults + shipping flags)"
           # Match stable shipping flags from the vcxproj. Explicit /p overrides keep CI honest
           # if a local user.props tries to weaken optimisations.
           msbuild MinimizeEffect.slnx `
             /restore `
             /p:Configuration=Release `
             /p:Platform=x64 `
-            /p:PlatformToolset=$toolset `
+            /p:PlatformToolset=v145 `
             /p:CharacterSet=MultiByte `
             /p:WholeProgramOptimization=true `
             /p:Optimization=MaxSpeed `
@@ -223,7 +287,11 @@ jobs:
           $bin = "build\bin\x64\Release"
           $out = "build\dist"
           New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $zipName = "MinimizeEffect-windows-x64.zip"
+          if ("${{ steps.version.outputs.prerelease }}" -eq "true") {
+            $zipName = "MinimizeEffect-windows-x64-${{ steps.version.outputs.version }}.zip"
+          } else {
+            $zipName = "MinimizeEffect-windows-x64.zip"
+          }
           $zip = Join-Path $out $zipName
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "$bin\MinimizeEffect.exe", "$bin\MinimizeEffectHook.dll" -DestinationPath $zip -Force
@@ -236,7 +304,8 @@ jobs:
           "name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Packaged $($item.FullName) ($([math]::Round($item.Length/1MB, 2)) MB, SHA-256 $checksum)"
 
-      - name: Publish GitHub Release
+      - name: Publish stable GitHub Release
+        if: ${{ !inputs.prerelease }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
@@ -271,4 +340,39 @@ jobs:
             Commit: `${{ github.sha }}`
         env:
           # Built-in token only — never a personal access token from the repo
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish pre-release on GitHub
+        if: inputs.prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Minimize Effect ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: true
+          make_latest: false
+          files: |
+            ${{ steps.package.outputs.path }}
+            ${{ steps.package.outputs.checksum_path }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          body: |
+            ## Minimize Effect ${{ steps.version.outputs.tag }}
+
+            Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
+            This build may be unstable and does not replace the latest stable download.
+
+            ### Install
+            1. Download **${{ steps.package.outputs.name }}**
+            2. Extract it (keep both files in the same folder)
+            3. Run `MinimizeEffect.exe`
+            4. Optional: run as Administrator for elevated windows
+
+            ### Package
+            - `MinimizeEffect.exe`
+            - `MinimizeEffectHook.dll`
+
+            Product version: **${{ steps.version.outputs.version }}**
+            Commit: `${{ github.sha }}`
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

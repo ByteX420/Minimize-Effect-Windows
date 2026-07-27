@@ -255,14 +255,45 @@ See [`docs/architecture.md`](docs/architecture.md) for ownership, state machine,
 
 ## Automated releases (GitHub Actions)
 
-When the **product version** in `app/MinimizeEffect.rc` changes on the **`stable`** branch, GitHub Actions:
+The repository has two public release tracks:
 
-1. Builds **Release | x64**
-2. Packs `MinimizeEffect.exe` + `MinimizeEffectHook.dll` into `MinimizeEffect-windows-x64.zip`
-3. Publishes a matching `MinimizeEffect-windows-x64.zip.sha256` integrity file
-4. Creates or updates the GitHub Release for tag `vX.Y.Z` and uploads both files
+- **Stable:** a version change pushed to `stable` creates `vX.Y.Z` and remains the app updater's
+  only update source.
+- **Pre-release:** changing `.github/BETA_VERSION` and pushing it to `beta` publishes exactly the
+  entered version, such as `v1.5.0-beta.1`, `v1.5.0-beta.2`, or `v1.5.0-rc.1`.
 
-Workflow file: [`.github/workflows/release.yml`](.github/workflows/release.yml)
+Both tracks use the same cached **Release | x64** build implementation. Pre-releases are marked as
+such on GitHub, are never made the latest release, and use a versioned ZIP filename so testers can
+keep multiple builds.
+
+Workflow files: [`.github/workflows/release.yml`](.github/workflows/release.yml) and
+[`.github/workflows/beta-release.yml`](.github/workflows/beta-release.yml).
+
+### Publish a beta or release candidate
+
+1. Finish and commit the code for the pre-release on `dev`.
+2. As the final release change, edit the single line in `.github/BETA_VERSION`:
+
+   ```text
+   1.5.0-beta.1
+   ```
+
+3. Commit the version and push `dev` to `beta`:
+
+   ```powershell
+   git add .github/BETA_VERSION
+   git commit -m "chore: release 1.5.0-beta.1"
+   git push origin dev
+   git push origin dev:beta
+   ```
+
+4. Normal code pushes that do not change `BETA_VERSION` create no release. For the next public
+   build, manually change the line to `1.5.0-beta.2`. For a release candidate, enter
+   `1.5.0-rc.1`, then `1.5.0-rc.2`, and so on.
+
+The exact `BETA_VERSION` value is used for the Git tag, release title, ZIP filename, Windows
+ProductVersion shown on the About page, and the Windows pre-release flag. These resource changes
+exist only inside the runner; `app/MinimizeEffect.rc` remains the independent stable version.
 
 ### Cut a new release
 
@@ -275,7 +306,7 @@ Workflow file: [`.github/workflows/release.yml`](.github/workflows/release.yml)
    #define MINIMIZE_PRODUCT_VERSION_STR "1.3.0\0"
    ```
 
-2. Merge into **`stable`** and push:
+2. After testing on `beta`, merge into **`stable`** and push:
 
    ```powershell
    git checkout stable
@@ -293,7 +324,7 @@ Manual run: **Actions → Release → Run workflow** (optional version override)
 | --- | --- |
 | Auth | Built-in **`GITHUB_TOKEN` only** — never a personal access token in the repo |
 | Permissions | Workflow requests only `contents: write` (tags + release assets) |
-| Triggers | Push to **`stable`** (version/`rc` paths) or manual dispatch — **not** on pull requests |
+| Triggers | Version-related push to **`stable`**, or a `BETA_VERSION` change on **`beta`** — **not** on pull requests |
 | Forks | Fork PRs cannot publish releases to this repository |
 | Secrets in code | None required for this workflow |
 
