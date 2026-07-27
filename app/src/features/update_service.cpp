@@ -18,6 +18,7 @@
 #include <winrt/Windows.Web.Http.h>
 #include <winrt/Windows.Web.Http.Headers.h>
 
+#include "miniz/miniz.h"
 #include "nlohmann/json.hpp"
 #include "platform/windows/process_info.hpp"
 
@@ -58,7 +59,6 @@ private:
   T value_{};
 };
 
-using UniqueHandle = UniqueResource<HANDLE, CloseHandle>;
 void CloseAlgorithm(BCRYPT_ALG_HANDLE handle) { (void)BCryptCloseAlgorithmProvider(handle, 0); }
 using UniqueAlgorithm = UniqueResource<BCRYPT_ALG_HANDLE, CloseAlgorithm>;
 using UniqueHash = UniqueResource<BCRYPT_HASH_HANDLE, BCryptDestroyHash>;
@@ -457,58 +457,73 @@ std::optional<std::string> ParseChecksum(std::string_view value) {
   return std::nullopt;
 }
 
-std::wstring EscapePowerShellLiteral(std::wstring value) {
-  std::size_t position = 0;
-  while ((position = value.find(L'\'', position)) != std::wstring::npos) {
-    value.insert(position, 1, L'\'');
-    position += 2;
-  }
-  return value;
-}
-
 bool ExtractZip(const std::filesystem::path& archive, const std::filesystem::path& destination,
                 std::string& error) {
-  const std::wstring system_root = [] {
-    std::wstring value(32768, L'\0');
-    const DWORD length =
-        GetEnvironmentVariableW(L"SystemRoot", value.data(), static_cast<DWORD>(value.size()));
-    if (length == 0 || length >= value.size()) return std::wstring(L"C:\\Windows");
-    value.resize(length);
-    return value;
-  }();
-  const std::filesystem::path powershell = std::filesystem::path(system_root) / L"System32" /
-                                           L"WindowsPowerShell" / L"v1.0" / L"powershell.exe";
-  const std::wstring command = L"& { $ErrorActionPreference='Stop'; Expand-Archive -LiteralPath '" +
-                               EscapePowerShellLiteral(archive.wstring()) +
-                               L"' -DestinationPath '" +
-                               EscapePowerShellLiteral(destination.wstring()) + L"' -Force }";
-  std::wstring command_line = QuoteArgument(powershell.wstring()) +
-                              L" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass "
-                              L"-WindowStyle Hidden -Command " +
-                              QuoteArgument(command);
-  STARTUPINFOW startup{};
-  startup.cb = sizeof(startup);
-  startup.dwFlags = STARTF_USESHOWWINDOW;
-  startup.wShowWindow = SW_HIDE;
-  PROCESS_INFORMATION process{};
-  if (!CreateProcessW(powershell.c_str(), command_line.data(), nullptr, nullptr, FALSE,
-                      CREATE_NO_WINDOW, nullptr, destination.parent_path().c_str(), &startup,
-                      &process)) {
-    error = "Could not start the built-in ZIP extractor.";
+  FILE* archive_file = nullptr;
+  if (_wfopen_s(&archive_file, archive.c_str(), L"rb") != 0 || archive_file == nullptr) {
+    error = "The update package could not be opened.";
     return false;
   }
-  UniqueHandle process_handle(process.hProcess);
-  UniqueHandle thread_handle(process.hThread);
-  if (WaitForSingleObject(process_handle.Get(), 120000) != WAIT_OBJECT_0) {
-    TerminateProcess(process_handle.Get(), ERROR_TIMEOUT);
-    error = "Extracting the update timed out.";
+  const std::unique_ptr<FILE, decltype(&fclose)> file_guard(archive_file, fclose);
+
+  mz_zip_archive zip{};
+  if (!mz_zip_reader_init_cfile(&zip, archive_file, 0, 0)) {
+    error = "The update package is not a valid ZIP archive.";
     return false;
   }
-  DWORD exit_code = 1;
-  GetExitCodeProcess(process_handle.Get(), &exit_code);
-  if (exit_code != 0) {
-    error = "The update package could not be extracted.";
-    return false;
+  struct ZipGuard final {
+    mz_zip_archive* zip;
+    ~ZipGuard() { mz_zip_reader_end(zip); }
+  } zip_guard{&zip};
+
+  std::error_code filesystem_error;
+  for (mz_uint index = 0; index < mz_zip_reader_get_num_files(&zip); ++index) {
+    mz_zip_archive_file_stat stat{};
+    if (!mz_zip_reader_file_stat(&zip, index, &stat) || stat.m_is_encrypted) {
+      error = "The update package contains an unsupported ZIP entry.";
+      return false;
+    }
+
+    const std::filesystem::path relative = std::filesystem::path(Utf8ToWide(stat.m_filename))
+                                               .lexically_normal();
+    if (relative.empty() || relative.is_absolute() || relative.has_root_path() ||
+        std::find(relative.begin(), relative.end(), std::filesystem::path(L"..")) !=
+            relative.end()) {
+      error = "The update package contains an unsafe path.";
+      return false;
+    }
+
+    const std::filesystem::path output = destination / relative;
+    if (stat.m_is_directory) {
+      std::filesystem::create_directories(output, filesystem_error);
+      if (filesystem_error) {
+        error = "Could not create a directory from the update package.";
+        return false;
+      }
+      continue;
+    }
+
+    std::filesystem::create_directories(output.parent_path(), filesystem_error);
+    if (filesystem_error) {
+      error = "Could not create the update package directory.";
+      return false;
+    }
+    std::ofstream extracted(output, std::ios::binary | std::ios::trunc);
+    if (!extracted) {
+      error = "Could not create an extracted update file.";
+      return false;
+    }
+    const auto write_file = [](void* opaque, mz_uint64 offset, const void* data,
+                               size_t size) -> size_t {
+      auto& stream = *static_cast<std::ofstream*>(opaque);
+      stream.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
+      stream.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+      return stream ? size : 0;
+    };
+    if (!mz_zip_reader_extract_to_callback(&zip, index, write_file, &extracted, 0)) {
+      error = "The update package could not be extracted.";
+      return false;
+    }
   }
   return true;
 }
