@@ -322,11 +322,12 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.4.3
-            - **Public beta and RC downloads** — added an opt-in pre-release pipeline with downloadable GitHub release assets
-            - **Manual pre-release versions** — `BETA_VERSION` controls exact `beta.N` and `rc.N` releases without publishing on normal code pushes
-            - **Stable-safe release flow** — pre-releases keep their full version in About and never replace the latest stable update
-            - **Faster release startup** — pinned CI builds to MSVC v145 and removed the slow recursive toolset scan
+            ### Changes in 1.5.0-beta.1
+            - Added configurable hotkeys to minimize and restore all windows.
+            - Added synchronized bulk animations for multiple windows.
+            - Improved bulk capture performance and startup responsiveness.
+            - Prevented repeated bulk hotkey presses during active animations.
+            - Improved foreground and z-order stability while minimizing windows.
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
