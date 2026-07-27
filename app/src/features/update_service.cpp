@@ -22,7 +22,7 @@ namespace minimize::features {
 namespace {
 
 constexpr wchar_t kReleaseApiUrl[] =
-    L"https://api.github.com/repos/ByteX420/Genie-Effect-Windows/releases/latest";
+    L"https://api.github.com/repos/ByteX420/Minimize-Effect-Windows/releases/latest";
 constexpr char kPackageName[] = "MinimizeEffect-windows-x64.zip";
 constexpr char kChecksumName[] = "MinimizeEffect-windows-x64.zip.sha256";
 constexpr std::uint64_t kMaximumDownloadBytes = 256ULL * 1024ULL * 1024ULL;

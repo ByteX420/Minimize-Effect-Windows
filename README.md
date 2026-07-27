@@ -1,4 +1,4 @@
-﻿# Minimize Effect for Windows
+# Minimize Effect for Windows
 
 **Minimize Effect** (`Minimize-Effect-Windows`) is an open-source Windows desktop app that replaces the stock minimize and restore transition with **smooth mesh animations** into the taskbar (classic / curvy minimize-style curves and squash). When you minimize a window, the live desktop region is captured and warped until it lands on the taskbar target (and expands back out on restore).
 
@@ -134,7 +134,7 @@ installs an update automatically:
    helper window. If handover fails, the running version rolls back the files in place.
 
 The updater uses only the public releases from
-`ByteX420/Genie-Effect-Windows`; it requires no account, token, or background service. Update
+`ByteX420/Minimize-Effect-Windows`; it requires no account, token, or background service. Update
 status and a manual **Check again** action also live on the **About** page.
 
 Settings persist to:
