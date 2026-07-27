@@ -15,6 +15,7 @@
 #include <utility>
 #include <winhttp.h>
 
+#include "nlohmann/json.hpp"
 #include "platform/windows/process_info.hpp"
 
 
@@ -246,75 +247,27 @@ bool IsSameVersion(std::string_view left, std::string_view right) {
   return left_version && right_version && left_version->parts == right_version->parts;
 }
 
-std::string DecodeJsonString(std::string_view json, std::size_t& position) {
-  std::string result;
-  if (position >= json.size() || json[position] != '"') return result;
-  ++position;
-  while (position < json.size()) {
-    const char character = json[position++];
-    if (character == '"') break;
-    if (character != '\\' || position >= json.size()) {
-      result.push_back(character);
-      continue;
-    }
-    const char escaped = json[position++];
-    switch (escaped) {
-      case '"':
-      case '\\':
-      case '/':
-        result.push_back(escaped);
-        break;
-      case 'b':
-        result.push_back('\b');
-        break;
-      case 'f':
-        result.push_back('\f');
-        break;
-      case 'n':
-        result.push_back('\n');
-        break;
-      case 'r':
-        result.push_back('\r');
-        break;
-      case 't':
-        result.push_back('\t');
-        break;
-      default:
-        break;
-    }
-  }
-  return result;
+std::optional<std::string> JsonStringValue(const nlohmann::json& object, std::string_view key) {
+  const auto value = object.find(key);
+  if (value == object.end() || !value->is_string()) return std::nullopt;
+  return value->get<std::string>();
 }
 
-std::optional<std::string> JsonStringValue(std::string_view json, std::string_view key,
-                                           std::size_t start = 0,
-                                           std::size_t end = std::string_view::npos) {
-  const std::string marker = "\"" + std::string(key) + "\"";
-  const std::size_t key_position = json.find(marker, start);
-  if (key_position == std::string_view::npos || key_position >= end) return std::nullopt;
-  std::size_t position = json.find(':', key_position + marker.size());
-  if (position == std::string_view::npos || position >= end) return std::nullopt;
-  position = json.find('"', position + 1);
-  if (position == std::string_view::npos || position >= end) return std::nullopt;
-  return DecodeJsonString(json, position);
-}
-
-std::optional<std::string> FindAssetValue(std::string_view json, std::string_view asset_name,
+std::optional<std::string> FindAssetValue(const nlohmann::json& release,
+                                          std::string_view asset_name,
                                           std::string_view key) {
-  const std::string marker = "\"name\":\"" + std::string(asset_name) + "\"";
-  std::size_t name_position = json.find(marker);
-  if (name_position == std::string_view::npos) {
-    const std::string spaced_marker = "\"name\": \"" + std::string(asset_name) + "\"";
-    name_position = json.find(spaced_marker);
+  const auto assets = release.find("assets");
+  if (assets == release.end() || !assets->is_array()) return std::nullopt;
+  for (const auto& asset : *assets) {
+    if (!asset.is_object() || asset.value("name", std::string{}) != asset_name) continue;
+    return JsonStringValue(asset, key);
   }
-  if (name_position == std::string_view::npos) return std::nullopt;
-  // GitHub's asset object contains a nested uploader object, so looking for the first
-  // closing brace would stop too early. Asset names are unique within a release.
-  return JsonStringValue(json, key, name_position);
+  return std::nullopt;
 }
 
-std::optional<std::string> FindAssetUrl(std::string_view json, std::string_view asset_name) {
-  return FindAssetValue(json, asset_name, "browser_download_url");
+std::optional<std::string> FindAssetUrl(const nlohmann::json& release,
+                                        std::string_view asset_name) {
+  return FindAssetValue(release, asset_name, "browser_download_url");
 }
 
 struct HttpResponse {
@@ -751,14 +704,23 @@ void UpdateService::CheckWorker(std::stop_token stop_token, bool user_initiated)
     return;
   }
 
-  const auto tag = JsonStringValue(*response, "tag_name");
-  const auto release_page = JsonStringValue(*response, "html_url");
-  const auto release_notes = JsonStringValue(*response, "body");
-  const auto package_url = FindAssetUrl(*response, kPackageName);
-  const auto package_digest = FindAssetValue(*response, kPackageName, "digest");
+  const nlohmann::json release = nlohmann::json::parse(*response, nullptr, false);
+  if (release.is_discarded() || !release.is_object()) {
+    UpdateSnapshot failed = GetSnapshot();
+    failed.phase = UpdatePhase::kError;
+    failed.status = "Could not read the release";
+    failed.error = "GitHub returned malformed release metadata.";
+    SetSnapshot(std::move(failed));
+    return;
+  }
+  const auto tag = JsonStringValue(release, "tag_name");
+  const auto release_page = JsonStringValue(release, "html_url");
+  const auto release_notes = JsonStringValue(release, "body");
+  const auto package_url = FindAssetUrl(release, kPackageName);
+  const auto package_digest = FindAssetValue(release, kPackageName, "digest");
   const auto api_checksum =
       package_digest ? ParseChecksum(*package_digest) : std::optional<std::string>{};
-  const auto checksum_url = FindAssetUrl(*response, kChecksumName);
+  const auto checksum_url = FindAssetUrl(release, kChecksumName);
   if (!tag || !release_page) {
     UpdateSnapshot failed = GetSnapshot();
     failed.phase = UpdatePhase::kError;
