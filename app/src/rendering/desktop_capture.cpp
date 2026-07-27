@@ -746,7 +746,7 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
 }
 
 void DesktopCapture::MarkDeviceLost(const wchar_t* context, HRESULT hr) {
-  device_lost_ = true;
+  device_lost_.store(true, std::memory_order_release);
   HRESULT reason = S_OK;
   if (d3d_device_ != nullptr && d3d_device_->device() != nullptr) {
     reason = d3d_device_->device()->GetDeviceRemovedReason();

@@ -130,7 +130,7 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
       run.pending_native_minimize_window = nullptr;
     }
     run.animating_restore = true;
-    run.overlay.ReverseAnimation();
+    run.overlay.ReverseAnimation(!context.defer_first_frame_wait);
     run.direction_started_ms = GetTickCount64();
     context.set_state(run_index, runtime::RunState::kRestoring);
     run.live_animation_capture_enabled = false;
@@ -196,12 +196,13 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
   core::LogTrace(L"Restore", L"Configured restore duration=" + std::to_wstring(duration));
   if (!run.overlay.StartAnimation(current->second.texture, ToRectF(current->second.bounds),
                                   current->second.target.rect, current->second.target.edge, 1.0f,
-                                  0.0f)) {
+                                  0.0f, !context.defer_first_frame_wait,
+                                  !context.defer_first_frame_wait)) {
     transaction->HandOff();
     context.abort_run(run_index);
     return false;
   }
-  run.overlay.StartAnimationClock();
+  if (!context.defer_first_frame_wait) run.overlay.StartAnimationClock();
   transaction->HandOff();
   return true;
 }

@@ -45,10 +45,11 @@ void AnimationRenderer::ContinueMinimize() {
   StartClock();
 }
 
-void AnimationRenderer::Reverse() {
+void AnimationRenderer::Reverse(bool start_clock) {
   if (!active_) return;
   target_progress_ = 0.0f;
-  StartClock();
+  clock_started_ = false;
+  if (start_clock) StartClock();
 }
 
 AnimationRenderer::AdvanceResult AnimationRenderer::Advance() {

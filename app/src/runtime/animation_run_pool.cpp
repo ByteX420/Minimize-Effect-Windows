@@ -20,6 +20,7 @@ std::vector<HWND> AnimationRunPool::DetachAnimatingWindows() {
     run.animating_window = nullptr;
     run.pending_native_minimize_window = nullptr;
     run.animating_restore = false;
+    run.bulk_animation = false;
   }
   return windows;
 }

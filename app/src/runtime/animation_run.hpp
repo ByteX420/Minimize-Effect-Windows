@@ -27,6 +27,7 @@ struct AnimationRun {
   HWND animating_window = nullptr;
   HWND pending_native_minimize_window = nullptr;
   bool animating_restore = false;
+  bool bulk_animation = false;
   ULONGLONG direction_started_ms = 0;
   RECT live_animation_bounds{};
   ULONGLONG last_animation_texture_refresh_ms = 0;

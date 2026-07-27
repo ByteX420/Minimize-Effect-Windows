@@ -30,6 +30,8 @@ void HotkeysPage::Render(::minimize::ui::SettingsWindow& window, components::Pag
       "Toggle effect",
       "Open settings",
       "Repair windows",
+      "Minimize all windows",
+      "Restore all minimized windows",
   };
   const float button_height = ::minimize::ui::theme::Metrics::kButtonHeight * scale;
   layout.BeginGroup();
@@ -77,7 +79,8 @@ void HotkeysPage::Render(::minimize::ui::SettingsWindow& window, components::Pag
   ImGui::GetWindowDrawList()->AddText(
       window.font_small_, window.font_small_->FontSize,
       ImVec2(std::floor(position.x + 0.5f), std::floor(position.y + 0.5f)),
-      ::minimize::ui::theme::WithAlpha(kSecondaryTextColor, alpha), window.hotkey_feedback_.c_str());
+      ::minimize::ui::theme::WithAlpha(kSecondaryTextColor, alpha),
+      window.hotkey_feedback_.c_str());
   layout.Gap(20.0f);
 }
 

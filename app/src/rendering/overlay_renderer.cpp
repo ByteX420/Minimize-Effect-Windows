@@ -6,6 +6,7 @@
 #include <array>
 #include <cstring>
 #include <d3dcompiler.h>
+#include <mutex>
 #include <vector>
 
 #include "rendering/d3d_device.hpp"
@@ -365,10 +366,25 @@ void OverlayRenderer::Shutdown() {
 }
 
 bool OverlayRenderer::CompileShaders() {
-  Microsoft::WRL::ComPtr<ID3DBlob> vertex_blob;
-  if (FAILED(CompileShader(kVertexShaderSource, "Main", "vs_5_0", &vertex_blob))) return false;
-  if (FAILED(device_->device()->CreateVertexShader(vertex_blob->GetBufferPointer(),
-                                                   vertex_blob->GetBufferSize(), nullptr,
+  struct CachedShaderBytecode {
+    Microsoft::WRL::ComPtr<ID3DBlob> vertex;
+    Microsoft::WRL::ComPtr<ID3DBlob> pixel;
+    bool valid = false;
+  };
+  static std::once_flag compile_once;
+  static CachedShaderBytecode bytecode;
+  std::call_once(compile_once, [] {
+    if (FAILED(CompileShader(kVertexShaderSource, "Main", "vs_5_0", &bytecode.vertex))) return;
+    if (FAILED(CompileShader(kPixelShaderSource, "Main", "ps_5_0", &bytecode.pixel))) {
+      bytecode.vertex.Reset();
+      return;
+    }
+    bytecode.valid = true;
+  });
+  if (!bytecode.valid) return false;
+
+  if (FAILED(device_->device()->CreateVertexShader(bytecode.vertex->GetBufferPointer(),
+                                                   bytecode.vertex->GetBufferSize(), nullptr,
                                                    &vertex_shader_))) {
     return false;
   }
@@ -377,59 +393,76 @@ bool OverlayRenderer::CompileShaders() {
                                D3D11_INPUT_PER_VERTEX_DATA, 0},
   };
   if (FAILED(device_->device()->CreateInputLayout(
-          kElements.data(), static_cast<UINT>(kElements.size()), vertex_blob->GetBufferPointer(),
-          vertex_blob->GetBufferSize(), &input_layout_))) {
+          kElements.data(), static_cast<UINT>(kElements.size()),
+          bytecode.vertex->GetBufferPointer(), bytecode.vertex->GetBufferSize(), &input_layout_))) {
     return false;
   }
-  Microsoft::WRL::ComPtr<ID3DBlob> pixel_blob;
-  if (FAILED(CompileShader(kPixelShaderSource, "Main", "ps_5_0", &pixel_blob))) return false;
   return SUCCEEDED(device_->device()->CreatePixelShader(
-      pixel_blob->GetBufferPointer(), pixel_blob->GetBufferSize(), nullptr, &pixel_shader_));
+      bytecode.pixel->GetBufferPointer(), bytecode.pixel->GetBufferSize(), nullptr, &pixel_shader_));
 }
 
 bool OverlayRenderer::CreateStaticGrid() {
-  std::vector<animation::GridVertex> vertices;
-  vertices.reserve(kGridVertexCount);
-  for (UINT row = 0; row <= kGridSegments; ++row) {
-    for (UINT column = 0; column <= kGridSegments; ++column) {
-      vertices.push_back(animation::GridVertex{
-          .u = static_cast<float>(column) / static_cast<float>(kGridSegments),
-          .v = static_cast<float>(row) / static_cast<float>(kGridSegments),
-      });
+  struct SharedGrid {
+    Microsoft::WRL::ComPtr<ID3D11Device> device;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> vertices;
+    Microsoft::WRL::ComPtr<ID3D11Buffer> indices;
+  };
+  static std::mutex grid_mutex;
+  static SharedGrid shared;
+  std::lock_guard lock(grid_mutex);
+
+  if (shared.device.Get() != device_->device()) {
+    shared = {};
+    std::vector<animation::GridVertex> vertices;
+    vertices.reserve(kGridVertexCount);
+    for (UINT row = 0; row <= kGridSegments; ++row) {
+      for (UINT column = 0; column <= kGridSegments; ++column) {
+        vertices.push_back(animation::GridVertex{
+            .u = static_cast<float>(column) / static_cast<float>(kGridSegments),
+            .v = static_cast<float>(row) / static_cast<float>(kGridSegments),
+        });
+      }
     }
-  }
 
-  std::vector<std::uint16_t> indices;
-  indices.reserve(kGridIndexCount);
-  for (UINT row = 0; row < kGridSegments; ++row) {
-    for (UINT column = 0; column < kGridSegments; ++column) {
-      const auto lower_left = static_cast<std::uint16_t>(row * (kGridSegments + 1) + column);
-      const auto lower_right = static_cast<std::uint16_t>(lower_left + 1);
-      const auto upper_left = static_cast<std::uint16_t>((row + 1) * (kGridSegments + 1) + column);
-      const auto upper_right = static_cast<std::uint16_t>(upper_left + 1);
-      indices.insert(indices.end(),
-                     {lower_left, upper_left, lower_right, lower_right, upper_left, upper_right});
+    std::vector<std::uint16_t> indices;
+    indices.reserve(kGridIndexCount);
+    for (UINT row = 0; row < kGridSegments; ++row) {
+      for (UINT column = 0; column < kGridSegments; ++column) {
+        const auto lower_left = static_cast<std::uint16_t>(row * (kGridSegments + 1) + column);
+        const auto lower_right = static_cast<std::uint16_t>(lower_left + 1);
+        const auto upper_left =
+            static_cast<std::uint16_t>((row + 1) * (kGridSegments + 1) + column);
+        const auto upper_right = static_cast<std::uint16_t>(upper_left + 1);
+        indices.insert(indices.end(),
+                       {lower_left, upper_left, lower_right, lower_right, upper_left, upper_right});
+      }
     }
+
+    D3D11_BUFFER_DESC vertex_desc{};
+    vertex_desc.ByteWidth = static_cast<UINT>(vertices.size() * sizeof(animation::GridVertex));
+    vertex_desc.Usage = D3D11_USAGE_IMMUTABLE;
+    vertex_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA vertex_data{.pSysMem = vertices.data()};
+    if (FAILED(
+            device_->device()->CreateBuffer(&vertex_desc, &vertex_data, &shared.vertices))) {
+      return false;
+    }
+
+    D3D11_BUFFER_DESC index_desc{};
+    index_desc.ByteWidth = static_cast<UINT>(indices.size() * sizeof(std::uint16_t));
+    index_desc.Usage = D3D11_USAGE_IMMUTABLE;
+    index_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+    D3D11_SUBRESOURCE_DATA index_data{.pSysMem = indices.data()};
+    if (FAILED(device_->device()->CreateBuffer(&index_desc, &index_data, &shared.indices))) {
+      shared.vertices.Reset();
+      return false;
+    }
+    shared.device = device_->device();
   }
 
-  D3D11_BUFFER_DESC vertex_desc{};
-  vertex_desc.ByteWidth = static_cast<UINT>(vertices.size() * sizeof(animation::GridVertex));
-  vertex_desc.Usage = D3D11_USAGE_IMMUTABLE;
-  vertex_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-  D3D11_SUBRESOURCE_DATA vertex_data{.pSysMem = vertices.data()};
-  if (FAILED(device_->device()->CreateBuffer(&vertex_desc, &vertex_data, &vertex_buffer_))) {
-    return false;
-  }
-
-  D3D11_BUFFER_DESC index_desc{};
-  index_desc.ByteWidth = static_cast<UINT>(indices.size() * sizeof(std::uint16_t));
-  index_desc.Usage = D3D11_USAGE_IMMUTABLE;
-  index_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
-  D3D11_SUBRESOURCE_DATA index_data{.pSysMem = indices.data()};
-  if (FAILED(device_->device()->CreateBuffer(&index_desc, &index_data, &index_buffer_))) {
-    return false;
-  }
-  index_count_ = static_cast<UINT>(indices.size());
+  vertex_buffer_ = shared.vertices;
+  index_buffer_ = shared.indices;
+  index_count_ = kGridIndexCount;
   return true;
 }
 

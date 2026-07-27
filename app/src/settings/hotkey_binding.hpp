@@ -9,6 +9,8 @@ enum class HotkeyAction : std::size_t {
   kToggleEffect,
   kOpenSettings,
   kRepairWindows,
+  kMinimizeAllWindows,
+  kRestoreAllWindows,
   kCount,
 };
 

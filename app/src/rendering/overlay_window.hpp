@@ -57,10 +57,12 @@ public:
                                     const minimize::animation::RectF& source_screen_rect,
                                     const minimize::animation::RectF& target_screen_rect,
                                     minimize::animation::MinimizeEdge edge, float start_progress = 0.0f,
-                                    float target_progress = 1.0f);
+                                    float target_progress = 1.0f,
+                                    bool wait_for_first_frame = true,
+                                    bool adjust_taskbar_z_order = true);
   void StartAnimationClock();
   void ContinueMinimizeAnimation();
-  void ReverseAnimation();
+  void ReverseAnimation(bool start_clock = true);
   bool Tick();
   void CancelAnimation();
   void FinishRestoreAnimation();

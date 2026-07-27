@@ -26,9 +26,9 @@ struct HotkeyField {
 
 std::optional<HotkeyField> FindHotkeyField(std::string_view key) {
   constexpr std::array prefixes = {
-      std::string_view{"toggleEffectHotkey"},
-      std::string_view{"openSettingsHotkey"},
-      std::string_view{"repairWindowsHotkey"},
+      std::string_view{"toggleEffectHotkey"},      std::string_view{"openSettingsHotkey"},
+      std::string_view{"repairWindowsHotkey"},     std::string_view{"minimizeAllWindowsHotkey"},
+      std::string_view{"restoreAllWindowsHotkey"},
   };
   for (size_t index = 0; index < prefixes.size(); ++index) {
     if (key.starts_with(prefixes[index]) && key.substr(prefixes[index].size()) == "Modifiers") {
@@ -525,9 +525,9 @@ std::string SettingsSerializer::Serialize(const AppSettings& settings) {
          << "  \"startMinimized\": " << settings.start_minimized << ",\n"
          << "  \"runAtStartup\": " << settings.run_at_startup << ",\n";
   constexpr std::array hotkey_names = {
-      std::string_view{"toggleEffectHotkey"},
-      std::string_view{"openSettingsHotkey"},
-      std::string_view{"repairWindowsHotkey"},
+      std::string_view{"toggleEffectHotkey"},      std::string_view{"openSettingsHotkey"},
+      std::string_view{"repairWindowsHotkey"},     std::string_view{"minimizeAllWindowsHotkey"},
+      std::string_view{"restoreAllWindowsHotkey"},
   };
   for (size_t index = 0; index < hotkey_names.size(); ++index) {
     const HotkeyBinding& binding = settings.hotkeys[index];

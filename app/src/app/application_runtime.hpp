@@ -97,9 +97,16 @@ private:
     kAborted,
   };
 
+  enum class BulkWindowAction {
+    kNone,
+    kMinimize,
+    kRestore,
+  };
+
   int FindRunForWindow(HWND window) const;
   [[nodiscard]] bool IsOverlayWindow(HWND window) const;
   int FindAvailableRun();
+  bool EnsureAnimationRunCapacity(std::size_t minimum_count);
   bool InitializeRun(runtime::AnimationRun& slot);
   void SetRunState(int run_index, runtime::RunState state);
   void CleanupRun(int run_index, RunCleanupOutcome outcome);
@@ -113,9 +120,14 @@ private:
   void FinishActiveAnimation(int run_index);
   void RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic = true);
   void UpdateTemporaryPause();
+  void MinimizeAllWindows();
+  void RestoreAllWindows();
+  void StartBulkWindowAction(BulkWindowAction action);
+  void ProcessBulkWindowAction();
   void RegisterConfiguredHotkeys();
   void UnregisterAllHotkeys();
   [[nodiscard]] bool StartRuntimeServices();
+  void PrewarmAnimationRuns();
   [[nodiscard]] features::DiagnosticsSnapshot BuildDiagnosticsSnapshot() const;
   [[nodiscard]] bool IsTemporarilyPaused() const;
   [[nodiscard]] bool IsEffectActive() const;
@@ -147,8 +159,19 @@ private:
   platform::windows::CbtHookManager cbt_hook_manager_;
   platform::windows::GlobalHotkeyManager hotkey_manager_;
   runtime::SnapshotCache snapshot_cache_;
+  BulkWindowAction bulk_window_action_ = BulkWindowAction::kNone;
+  bool bulk_hotkey_locked_ = false;
+  std::deque<HWND> bulk_window_queue_;
+  struct PreparedBulkCapture {
+    rendering::CapturedTexture texture;
+    RECT bounds{};
+  };
+  std::unordered_map<HWND, PreparedBulkCapture> prepared_bulk_captures_;
+  HWND bulk_window_in_flight_ = nullptr;
+  ULONGLONG bulk_window_request_started_ms_ = 0;
   std::unordered_map<HWND, ULONGLONG> minimize_suppressed_until_;
   ULONGLONG last_snapshot_refresh_ms_ = 0;
+  ULONGLONG last_run_prewarm_ms_ = 0;
   runtime::RendererRecovery renderer_recovery_;
   bool effect_runtime_active_ = false;
   ULONGLONG last_fullscreen_check_ms_ = 0;

@@ -135,7 +135,8 @@ bool OverlayWindow::StartAnimation(CapturedTexture captured_texture,
                                    const minimize::animation::RectF& source_screen_rect,
                                    const minimize::animation::RectF& target_screen_rect,
                                    minimize::animation::MinimizeEdge edge, float start_progress,
-                                   float target_progress) {
+                                   float target_progress, bool wait_for_first_frame,
+                                   bool adjust_taskbar_z_order) {
   minimize::core::LogTrace(
       L"Overlay", L"StartAnimation requested source=" + RectFTraceString(source_screen_rect) +
                       L" target=" + RectFTraceString(target_screen_rect) + L" start_progress=" +
@@ -195,7 +196,7 @@ bool OverlayWindow::StartAnimation(CapturedTexture captured_texture,
 
   HWND taskbar_hwnd = minimize::platform::FindTaskbarWindowForRect(target_rect_win);
 
-  if (taskbar_hwnd != nullptr) {
+  if (adjust_taskbar_z_order && taskbar_hwnd != nullptr) {
     SetWindowPos(taskbar_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                  SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
   }
@@ -205,18 +206,21 @@ bool OverlayWindow::StartAnimation(CapturedTexture captured_texture,
                static_cast<int>(width_), static_cast<int>(height_),
                SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
 
-  DwmFlush();
-  HRESULT hr = composition_device_->WaitForCommitCompletion();
-  if (FAILED(hr)) {
-    MarkDeviceLost(L"WaitForCommitCompletion", hr);
-    minimize::core::LogTrace(L"Overlay", L"StartAnimation failed: WaitForCommitCompletion hr=0x" +
-                                             std::to_wstring(static_cast<unsigned long>(hr)));
-    animation_renderer_.Cancel();
-    HideOverlay();
-    std::wcerr << L"Overlay start failed: first frame commit did not "
-                  L"complete: 0x"
-               << std::hex << hr << std::dec << L"\n";
-    return false;
+  if (wait_for_first_frame) {
+    DwmFlush();
+    const HRESULT hr = composition_device_->WaitForCommitCompletion();
+    if (FAILED(hr)) {
+      MarkDeviceLost(L"WaitForCommitCompletion", hr);
+      minimize::core::LogTrace(L"Overlay",
+                               L"StartAnimation failed: WaitForCommitCompletion hr=0x" +
+                                   std::to_wstring(static_cast<unsigned long>(hr)));
+      animation_renderer_.Cancel();
+      HideOverlay();
+      std::wcerr << L"Overlay start failed: first frame commit did not "
+                    L"complete: 0x"
+                 << std::hex << hr << std::dec << L"\n";
+      return false;
+    }
   }
   minimize::core::LogTrace(L"Overlay", L"StartAnimation first frame visible overlay_source=" +
                                            RectFTraceString(ToOverlayRect(source_screen_rect)) +
@@ -234,7 +238,7 @@ void OverlayWindow::StartAnimationClock() { animation_renderer_.StartClock(); }
 
 void OverlayWindow::ContinueMinimizeAnimation() { animation_renderer_.ContinueMinimize(); }
 
-void OverlayWindow::ReverseAnimation() { animation_renderer_.Reverse(); }
+void OverlayWindow::ReverseAnimation(bool start_clock) { animation_renderer_.Reverse(start_clock); }
 
 bool OverlayWindow::Tick() {
   if (!animation_renderer_.active()) return false;

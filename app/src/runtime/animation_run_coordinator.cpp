@@ -47,6 +47,17 @@ int ApplicationRuntime::FindAvailableRun() {
   return static_cast<int>(runs_.size() - 1);
 }
 
+bool ApplicationRuntime::EnsureAnimationRunCapacity(std::size_t minimum_count) {
+  while (runs_.size() < minimum_count) {
+    runtime::AnimationRun& run = runs_.Add();
+    if (!InitializeRun(run)) {
+      runs_.RemoveLast();
+      return false;
+    }
+  }
+  return true;
+}
+
 bool ApplicationRuntime::IsOverlayWindow(HWND window) const {
   return std::any_of(runs_.begin(), runs_.end(), [window](const runtime::AnimationRun& slot) {
     return slot.overlay.window() == window;
@@ -112,6 +123,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
   slot.animating_window = nullptr;
   slot.pending_native_minimize_window = nullptr;
   slot.animating_restore = false;
+  slot.bulk_animation = false;
   slot.live_animation_capture_enabled = false;
 
   if (window != nullptr && IsWindow(window)) {
@@ -206,19 +218,21 @@ bool ApplicationRuntime::OnMinimizeStart(HWND window) {
   const auto suppressed = minimize_suppressed_until_.find(window);
   if (suppressed != minimize_suppressed_until_.end()) {
     if (now < suppressed->second) {
-      minimize::core::LogDebug(L"Minimize",
-                            L"Ignored delayed minimize immediately after restore");
+      minimize::core::LogDebug(L"Minimize", L"Ignored delayed minimize immediately after restore");
       return true;
     }
     minimize_suppressed_until_.erase(suppressed);
   }
 
   const features::RenderingPressure pressure = GetRenderingPressure();
-  return minimize_feature_.Execute(
+  const bool force_animation =
+      bulk_window_action_ == BulkWindowAction::kMinimize && bulk_window_in_flight_ == window;
+  const bool handled = minimize_feature_.Execute(
       window,
       features::MinimizeExecutionContext{
           .overlay = GetOverlayWindow(),
           .effect_active = IsEffectActive(),
+          .force_animation = force_animation,
           .renderer_recovering = renderer_recovery_.pending(),
           .shutting_down = shutting_down_.load(std::memory_order_acquire),
           .capture = desktop_capture_.get(),
@@ -237,7 +251,20 @@ bool ApplicationRuntime::OnMinimizeStart(HWND window) {
           .complete_restore = [this](HWND target) { restore_feature_.Complete(target); },
           .record_capture_duration =
               [this](float duration_ms) { NoteCaptureDuration(duration_ms); },
+          .take_prepared_capture =
+              [this](HWND target, rendering::CapturedTexture* texture, RECT* bounds) {
+                if (texture == nullptr || bounds == nullptr) return false;
+                const auto prepared = prepared_bulk_captures_.find(target);
+                if (prepared == prepared_bulk_captures_.end()) return false;
+                *texture = std::move(prepared->second.texture);
+                *bounds = prepared->second.bounds;
+                prepared_bulk_captures_.erase(prepared);
+                return texture->shader_resource_view != nullptr;
+              },
       });
+  const int run_index = FindRunForWindow(window);
+  if (force_animation && run_index != -1) runs_[run_index].bulk_animation = true;
+  return handled;
 }
 
 void ApplicationRuntime::FinishActiveAnimation(int run_index) {
@@ -248,11 +275,14 @@ void ApplicationRuntime::FinishActiveAnimation(int run_index) {
 
 bool ApplicationRuntime::OnRestoreAttempt(HWND window) {
   const features::RenderingPressure pressure = GetRenderingPressure();
-  return restore_feature_.Execute(
+  const bool bulk_restore = bulk_window_action_ == BulkWindowAction::kRestore &&
+                            bulk_window_in_flight_ == window;
+  const bool handled = restore_feature_.Execute(
       window,
       features::RestoreExecutionContext{
           .overlay = GetOverlayWindow(),
           .effect_active = IsEffectActive(),
+          .defer_first_frame_wait = bulk_restore,
           .renderer_recovering = renderer_recovery_.pending(),
           .shutting_down = shutting_down_.load(std::memory_order_acquire),
           .animation_blocker = &native_animation_blocker_,
@@ -268,6 +298,9 @@ bool ApplicationRuntime::OnRestoreAttempt(HWND window) {
           .finish_run = [this](int index) { FinishActiveAnimation(index); },
           .abort_run = [this](int index) { CleanupRun(index, RunCleanupOutcome::kAborted); },
       });
+  const int run_index = FindRunForWindow(window);
+  if (bulk_restore && run_index != -1) runs_[run_index].bulk_animation = true;
+  return handled;
 }
 
 void ApplicationRuntime::RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic) {
@@ -280,7 +313,7 @@ void ApplicationRuntime::HealLeftoverWindows() {
                                ? "No issues found"
                                : std::to_string(repaired_count) + " window(s) repaired";
   minimize::core::LogDebug(L"App", L"Startup repair result: " + std::to_wstring(repaired_count) +
-                                    L" suspicious window(s) repaired");
+                                       L" suspicious window(s) repaired");
 }
 
 void ApplicationRuntime::CleanupAndRestoreAll() {
@@ -313,8 +346,8 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
         !run.overlay.active()) {
       continue;
     }
-    HWND window = run.animating_window != nullptr ? run.animating_window
-                                                  : run.pending_native_minimize_window;
+    HWND window =
+        run.animating_window != nullptr ? run.animating_window : run.pending_native_minimize_window;
     const bool was_restoring = run.animating_restore;
     if (run.state != runtime::RunState::kIdle) {
       SetRunState(index, runtime::RunState::kCleaningUp);
@@ -322,6 +355,7 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
     run.animating_window = nullptr;
     run.pending_native_minimize_window = nullptr;
     run.animating_restore = false;
+    run.bulk_animation = false;
     run.live_animation_capture_enabled = false;
     if (window != nullptr && IsWindow(window)) {
       if (was_restoring) {
@@ -341,7 +375,8 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
   restore_feature_.ReleaseAll();
   runtime::SnapshotCache::Contents snapshots = snapshot_cache_.TakeAll();
 
-  // Snapshots of effect-minimized windows first (finish_as_minimized), while effect props still exist.
+  // Snapshots of effect-minimized windows first (finish_as_minimized), while effect props still
+  // exist.
   for (const auto& [hwnd, snapshot] : snapshots.restore) {
     (void)snapshot;
     window_recovery_service_.ReleaseWithoutShowing(hwnd, true);

@@ -123,7 +123,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     return false;
   }
   const ULONGLONG now_ms = GetTickCount64();
-  if (policy_.ShouldSkipAnimationForLoad(*context.rendering_pressure, now_ms)) {
+  if (!context.force_animation &&
+      policy_.ShouldSkipAnimationForLoad(*context.rendering_pressure, now_ms)) {
     core::LogDebug(L"Minimize", L"Smart-skip: native minimize under load");
     platform::SetDwmTransitionsDisabled(window, false);
     return false;
@@ -157,18 +158,24 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   struct TopmostRestorer {
     HWND window = nullptr;
     bool was_topmost = false;
+    bool activated = false;
     bool restored = false;
+    void Activate() {
+      if (activated || window == nullptr || !IsWindow(window)) return;
+      was_topmost = platform::BringWindowToCaptureForeground(window);
+      activated = true;
+    }
     void RestoreNow() {
       if (restored) return;
       restored = true;
-      if (window != nullptr && IsWindow(window) && !was_topmost) {
+      if (activated && window != nullptr && IsWindow(window) && !was_topmost) {
         SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
       }
     }
     ~TopmostRestorer() { RestoreNow(); }
-  } topmost{window, platform::BringWindowToCaptureForeground(window)};
+  } topmost{.window = window};
+  if (!context.force_animation) topmost.Activate();
 
-  context.capture->ClearHistory();
   const std::optional<RECT> animation_bounds = ResolveAnimationBounds(window);
   if (!animation_bounds.has_value()) {
     context.set_state(run_index, runtime::RunState::kIdle);
@@ -196,16 +203,33 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   if (already_minimized && has_cached) {
     source_bounds = pre_minimize->second.bounds;
     captured_texture = pre_minimize->second.texture;
-  } else if (!already_minimized && prefer_window_capture &&
+  } else if (!already_minimized && context.force_animation &&
+             context.take_prepared_capture &&
+             context.take_prepared_capture(window, &captured_texture, &captured_window_bounds)) {
+    source_bounds = captured_window_bounds;
+  } else if (!already_minimized && context.force_animation && !IsHungAppWindow(window) &&
+             context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
+                                            &captured_window_bounds)) {
+    // Bulk capture does not need to focus or reorder the target. This avoids one DWM flush and
+    // one fresh desktop-duplication frame per window while preserving the native-resolution image.
+    source_bounds = captured_window_bounds;
+  } else if (!already_minimized && !context.force_animation && prefer_window_capture &&
              context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
                                             &captured_window_bounds)) {
     source_bounds = captured_window_bounds;
-  } else if (!already_minimized &&
-             context.capture->CaptureRegion(window, *animation_bounds, &captured_texture)) {
-  } else if (!already_minimized && !prefer_window_capture &&
-             context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                            &captured_window_bounds)) {
-    source_bounds = captured_window_bounds;
+  } else if (!already_minimized) {
+    topmost.Activate();
+    context.capture->ClearHistory();
+    bool captured = context.capture->CaptureRegion(window, *animation_bounds, &captured_texture);
+    if (!captured && !prefer_window_capture) {
+      captured = context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
+                                                &captured_window_bounds);
+      if (captured) source_bounds = captured_window_bounds;
+    }
+    if (!captured && has_cached) {
+      source_bounds = pre_minimize->second.bounds;
+      captured_texture = pre_minimize->second.texture;
+    }
   } else if (has_cached) {
     source_bounds = pre_minimize->second.bounds;
     captured_texture = pre_minimize->second.texture;
@@ -219,7 +243,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   // Capture cost is known only after this sample — if it was already too slow, abort Minimize
   // for this minimize and latch smart-skip so subsequent events stay native while pressure cools.
   constexpr float kAbortCaptureMs = 28.0f;
-  if (policy_.smart_skip_enabled() && !already_minimized && capture_duration >= kAbortCaptureMs) {
+  if (!context.force_animation && policy_.smart_skip_enabled() && !already_minimized &&
+      capture_duration >= kAbortCaptureMs) {
     core::LogDebug(L"Minimize", L"Smart-skip: abort after slow capture (" +
                                     std::to_wstring(capture_duration) + L" ms)");
     policy_.NoteSmartSkip(now_ms);
@@ -264,8 +289,9 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   const float duration = context.animation_configuration->Apply(run.overlay, source_bounds, false,
                                                                 *context.rendering_pressure);
   core::LogTrace(L"Minimize", L"Configured minimize duration=" + std::to_wstring(duration));
-  if (!run.overlay.StartAnimation(captured_texture, ToRectF(source_bounds), target.rect,
-                                  target.edge)) {
+  if (!run.overlay.StartAnimation(captured_texture, ToRectF(source_bounds), target.rect, target.edge,
+                                  0.0f, 1.0f, !context.force_animation,
+                                  !context.force_animation)) {
     transaction->HandOff();
     context.abort_run(run_index);
     return false;
@@ -281,7 +307,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
 
   if (IsIconic(window) == FALSE) {
     SetPropW(window, platform::windows::properties::kAllowMinimize, reinterpret_cast<HANDLE>(1));
-    if (!ShowWindowAsync(window, SW_MINIMIZE)) {
+    const int minimize_command = context.force_animation ? SW_SHOWMINNOACTIVE : SW_MINIMIZE;
+    if (!ShowWindowAsync(window, minimize_command)) {
       context.animation_blocker->SetTransitionsDisabledForWindow(window, false);
       transaction->HandOff();
       context.abort_run(run_index);
@@ -573,7 +600,8 @@ bool MinimizeFeature::TickSeedSnapshotsForIconicWindows() {
 }
 
 void MinimizeFeature::CompletePendingNativeMinimize(
-    int run_index, const std::function<void(int, runtime::RunState)>& set_state,
+    int run_index, bool start_animation_clock,
+    const std::function<void(int, runtime::RunState)>& set_state,
     const std::function<void(int)>& abort) {
   if (run_index < 0 || run_index >= static_cast<int>(runs_.size())) return;
   runtime::AnimationRun& run = runs_[run_index];
@@ -615,9 +643,11 @@ void MinimizeFeature::CompletePendingNativeMinimize(
   SetPropW(window, platform::windows::properties::kMovedOffscreen, reinterpret_cast<HANDLE>(1));
   snapshot->second.was_maximized = was_maximized;
   snapshot->second.moved_offscreen = true;
-  run.overlay.StartAnimationClock();
+  if (start_animation_clock) run.overlay.StartAnimationClock();
   set_state(run_index, runtime::RunState::kAnimating);
-  core::LogTrace(L"Minimize", L"Native minimize completed; animation clock started");
+  core::LogTrace(L"Minimize", start_animation_clock
+                                  ? L"Native minimize completed; animation clock started"
+                                  : L"Native minimize completed; waiting at bulk start barrier");
 }
 
 }  // namespace minimize::features

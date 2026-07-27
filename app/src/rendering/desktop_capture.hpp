@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <atomic>
 #include <d3d11_4.h>
 #include <dxgi1_6.h>
 #include <windows.h>
@@ -36,10 +37,10 @@ public:
                                             CapturedTexture* captured_texture);
   void ClearHistory() { duplication_session_.ClearHistory(); }
   [[nodiscard]] bool device_lost() const {
-    return device_lost_ || duplication_session_.device_lost();
+    return device_lost_.load(std::memory_order_acquire) || duplication_session_.device_lost();
   }
   void ClearDeviceLost() {
-    device_lost_ = false;
+    device_lost_.store(false, std::memory_order_release);
     duplication_session_.ClearDeviceLost();
   }
 
@@ -57,7 +58,7 @@ private:
 
   D3dDevice* d3d_device_ = nullptr;
   DesktopDuplicationSession duplication_session_;
-  bool device_lost_ = false;
+  std::atomic_bool device_lost_{false};
 };
 
 }  // namespace minimize::rendering

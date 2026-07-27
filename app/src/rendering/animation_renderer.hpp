@@ -28,7 +28,7 @@ public:
                            float start_progress, float target_progress);
   void StartClock();
   void ContinueMinimize();
-  void Reverse();
+  void Reverse(bool start_clock = true);
   [[nodiscard]] AdvanceResult Advance();
   void CompleteFrame(bool render_succeeded, bool reached_target);
   void Cancel();

@@ -35,6 +35,7 @@ struct RestoreRequest {
 struct RestoreExecutionContext {
   HWND overlay = nullptr;
   bool effect_active = false;
+  bool defer_first_frame_wait = false;
   bool renderer_recovering = false;
   bool shutting_down = false;
   platform::NativeAnimationBlocker* animation_blocker = nullptr;

@@ -21,6 +21,7 @@ class NativeAnimationBlocker;
 class TaskbarTargetProvider;
 }  // namespace minimize::platform
 namespace minimize::rendering {
+struct CapturedTexture;
 class DesktopCapture;
 }
 namespace minimize::runtime {
@@ -38,6 +39,7 @@ struct MinimizeRequest {
 struct MinimizeExecutionContext {
   HWND overlay = nullptr;
   bool effect_active = false;
+  bool force_animation = false;
   bool renderer_recovering = false;
   bool shutting_down = false;
   rendering::DesktopCapture* capture = nullptr;
@@ -52,6 +54,7 @@ struct MinimizeExecutionContext {
   std::function<void(int)> abort_run;
   std::function<void(HWND)> complete_restore;
   std::function<void(float)> record_capture_duration;
+  std::function<bool(HWND, rendering::CapturedTexture*, RECT*)> take_prepared_capture;
 };
 
 class MinimizeFeature final {
@@ -96,6 +99,7 @@ public:
   void CancelSeedSnapshotsForIconicWindows();
   [[nodiscard]] bool SeedSnapshotsInProgress() const;
   void CompletePendingNativeMinimize(int run_index,
+                                     bool start_animation_clock,
                                      const std::function<void(int, runtime::RunState)>& set_state,
                                      const std::function<void(int)>& abort);
 

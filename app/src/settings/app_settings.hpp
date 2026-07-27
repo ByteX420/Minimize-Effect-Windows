@@ -39,6 +39,8 @@ struct AppSettings {
       HotkeyBinding{.modifiers = 0x0001u | 0x0002u, .virtual_key = 'G'},
       HotkeyBinding{},
       HotkeyBinding{},
+      HotkeyBinding{.modifiers = 0x0001u | 0x0002u, .virtual_key = 'M'},
+      HotkeyBinding{.modifiers = 0x0001u | 0x0002u, .virtual_key = 'R'},
   };
 
   bool operator==(const AppSettings&) const = default;
