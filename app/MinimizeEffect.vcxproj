@@ -65,7 +65,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(ProjectDir)third_party\freetype\lib\freetype.lib;d3d11.lib;dxgi.lib;dwmapi.lib;dcomp.lib;d3dcompiler.lib;shell32.lib;ole32.lib;oleaut32.lib;comdlg32.lib;bcrypt.lib;winhttp.lib;version.lib;uiautomationcore.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)third_party\freetype\lib\freetype.lib;d3d11.lib;dxgi.lib;dwmapi.lib;dcomp.lib;d3dcompiler.lib;shell32.lib;ole32.lib;oleaut32.lib;comdlg32.lib;bcrypt.lib;runtimeobject.lib;version.lib;uiautomationcore.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>

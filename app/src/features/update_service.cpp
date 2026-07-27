@@ -13,7 +13,10 @@
 #include <sstream>
 #include <string_view>
 #include <utility>
-#include <winhttp.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Storage.Streams.h>
+#include <winrt/Windows.Web.Http.h>
+#include <winrt/Windows.Web.Http.Headers.h>
 
 #include "nlohmann/json.hpp"
 #include "platform/windows/process_info.hpp"
@@ -55,7 +58,6 @@ private:
   T value_{};
 };
 
-using UniqueInternet = UniqueResource<HINTERNET, WinHttpCloseHandle>;
 using UniqueHandle = UniqueResource<HANDLE, CloseHandle>;
 void CloseAlgorithm(BCRYPT_ALG_HANDLE handle) { (void)BCryptCloseAlgorithmProvider(handle, 0); }
 using UniqueAlgorithm = UniqueResource<BCRYPT_ALG_HANDLE, CloseAlgorithm>;
@@ -272,105 +274,75 @@ std::optional<std::string> FindAssetUrl(const nlohmann::json& release,
 
 struct HttpResponse {
   bool success = false;
-  DWORD status_code = 0;
+  std::uint32_t status_code = 0;
   std::string error;
 };
 
 template <typename Sink>
 HttpResponse HttpGet(std::wstring_view url, Sink&& sink, std::stop_token stop_token) {
   HttpResponse result{};
-  URL_COMPONENTSW components{};
-  components.dwStructSize = sizeof(components);
-  std::array<wchar_t, 512> host{};
-  std::array<wchar_t, 4096> path{};
-  components.lpszHostName = host.data();
-  components.dwHostNameLength = static_cast<DWORD>(host.size());
-  components.lpszUrlPath = path.data();
-  components.dwUrlPathLength = static_cast<DWORD>(path.size());
-  components.dwSchemeLength = 0;
-  if (!WinHttpCrackUrl(url.data(), static_cast<DWORD>(url.size()), 0, &components)) {
-    result.error = "The update URL is invalid.";
-    return result;
-  }
-  const bool secure = components.nScheme == INTERNET_SCHEME_HTTPS;
-  UniqueInternet session(WinHttpOpen(L"MinimizeEffect-Updater/1.0",
-                                     WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
-                                     WINHTTP_NO_PROXY_BYPASS, 0));
-  if (!session) {
-    result.error = "Could not initialize the network connection.";
-    return result;
-  }
-  WinHttpSetTimeouts(session.Get(), 8000, 8000, 15000, 15000);
-  UniqueInternet connection(WinHttpConnect(session.Get(), host.data(), components.nPort, 0));
-  if (!connection) {
-    result.error = "Could not connect to GitHub.";
-    return result;
-  }
-  const DWORD flags = secure ? WINHTTP_FLAG_SECURE : 0;
-  UniqueInternet request(WinHttpOpenRequest(connection.Get(), L"GET", path.data(), nullptr,
-                                            WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES,
-                                            flags));
-  if (!request) {
-    result.error = "Could not create the update request.";
-    return result;
-  }
-  constexpr wchar_t kHeaders[] =
-      L"Accept: application/vnd.github+json\r\nX-GitHub-Api-Version: 2022-11-28\r\n";
-  if (!WinHttpSendRequest(request.Get(), kHeaders, static_cast<DWORD>(-1L), WINHTTP_NO_REQUEST_DATA,
-                          0, 0, 0) ||
-      !WinHttpReceiveResponse(request.Get(), nullptr)) {
-    result.error = "GitHub did not respond. Check your connection and try again.";
-    return result;
-  }
-  DWORD status_size = sizeof(result.status_code);
-  if (!WinHttpQueryHeaders(request.Get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                           nullptr, &result.status_code, &status_size, nullptr) ||
-      result.status_code < 200 || result.status_code >= 300) {
-    result.error = "GitHub returned HTTP " + std::to_string(result.status_code) + ".";
-    return result;
-  }
-
-  std::uint64_t received = 0;
-  for (;;) {
-    if (stop_token.stop_requested()) {
-      result.error = "Cancelled.";
-      return result;
-    }
-    DWORD available = 0;
-    if (!WinHttpQueryDataAvailable(request.Get(), &available)) {
-      result.error = "The update download was interrupted.";
-      return result;
-    }
-    if (available == 0) break;
-    std::vector<std::byte> buffer(std::min<DWORD>(available, 64 * 1024));
-    DWORD read = 0;
-    if (!WinHttpReadData(request.Get(), buffer.data(), static_cast<DWORD>(buffer.size()), &read)) {
-      result.error = "The update download was interrupted.";
-      return result;
-    }
-    if (read == 0) break;
-    received += read;
-    if (received > kMaximumDownloadBytes || !sink(buffer.data(), read, received, request.Get())) {
-      result.error = received > kMaximumDownloadBytes ? "The update package is unexpectedly large."
-                                                      : "Could not save the update package.";
-      return result;
-    }
-  }
-  result.success = true;
-  return result;
-}
-
-std::optional<std::uint64_t> ContentLength(HINTERNET request) {
-  wchar_t value[64]{};
-  DWORD size = sizeof(value);
-  if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CONTENT_LENGTH, nullptr, value, &size, nullptr)) {
-    return std::nullopt;
-  }
   try {
-    return std::stoull(value);
-  } catch (...) {
-    return std::nullopt;
+    winrt::init_apartment(winrt::apartment_type::multi_threaded);
+    struct ApartmentGuard final {
+      ~ApartmentGuard() { winrt::uninit_apartment(); }
+    } apartment_guard;
+
+    const winrt::Windows::Foundation::Uri uri{std::wstring(url)};
+    winrt::Windows::Web::Http::HttpClient client;
+    client.DefaultRequestHeaders().UserAgent().ParseAdd(L"MinimizeEffect-Updater/1.0");
+    client.DefaultRequestHeaders().Accept().ParseAdd(L"application/vnd.github+json");
+
+    auto response_operation = client.GetAsync(
+        uri, winrt::Windows::Web::Http::HttpCompletionOption::ResponseHeadersRead);
+    std::stop_callback cancel_response(stop_token, [&response_operation] {
+      response_operation.Cancel();
+    });
+    const auto response = response_operation.get();
+    result.status_code = static_cast<std::uint32_t>(response.StatusCode());
+    if (!response.IsSuccessStatusCode()) {
+      result.error = "GitHub returned HTTP " + std::to_string(result.status_code) + ".";
+      return result;
+    }
+
+    std::uint64_t total = 0;
+    if (const auto length = response.Content().Headers().ContentLength()) {
+      total = length.Value();
+    }
+    const auto stream = response.Content().ReadAsInputStreamAsync().get();
+    std::uint64_t received = 0;
+    for (;;) {
+      if (stop_token.stop_requested()) {
+        result.error = "Cancelled.";
+        return result;
+      }
+      winrt::Windows::Storage::Streams::Buffer buffer(64 * 1024);
+      auto read_operation =
+          stream.ReadAsync(buffer, buffer.Capacity(),
+                           winrt::Windows::Storage::Streams::InputStreamOptions::None);
+      std::stop_callback cancel_read(stop_token, [&read_operation] { read_operation.Cancel(); });
+      const auto bytes = read_operation.get();
+      if (bytes.Length() == 0) break;
+
+      std::vector<std::uint8_t> chunk(bytes.Length());
+      winrt::Windows::Storage::Streams::DataReader::FromBuffer(bytes).ReadBytes(chunk);
+      received += chunk.size();
+      if (received > kMaximumDownloadBytes ||
+          !sink(reinterpret_cast<const std::byte*>(chunk.data()),
+                static_cast<std::uint32_t>(chunk.size()), received, total)) {
+        result.error = received > kMaximumDownloadBytes ? "The update package is unexpectedly large."
+                                                        : "Could not save the update package.";
+        return result;
+      }
+    }
+    result.success = true;
+  } catch (const winrt::hresult_canceled&) {
+    result.error = "Cancelled.";
+  } catch (const winrt::hresult_error&) {
+    if (result.status_code == 0) {
+      result.error = "GitHub did not respond. Check your connection and try again.";
+    }
   }
+  return result;
 }
 
 std::optional<std::string> GetText(std::wstring_view url, std::stop_token stop_token,
@@ -378,7 +350,7 @@ std::optional<std::string> GetText(std::wstring_view url, std::stop_token stop_t
   std::string text;
   auto response = HttpGet(
       url,
-      [&text](const std::byte* data, DWORD size, std::uint64_t, HINTERNET) {
+      [&text](const std::byte* data, std::uint32_t size, std::uint64_t, std::uint64_t) {
         if (text.size() + size > 4 * 1024 * 1024) return false;
         text.append(reinterpret_cast<const char*>(data), size);
         return true;
@@ -400,15 +372,14 @@ bool DownloadFile(std::wstring_view url, const std::filesystem::path& destinatio
     error = "Could not create the update file.";
     return false;
   }
-  std::optional<std::uint64_t> total;
   auto response = HttpGet(
       url,
-      [&](const std::byte* data, DWORD size, std::uint64_t received, HINTERNET request) {
+      [&](const std::byte* data, std::uint32_t size, std::uint64_t received,
+          std::uint64_t total) {
         if (should_cancel()) return false;
-        if (!total) total = ContentLength(request);
         file.write(reinterpret_cast<const char*>(data), size);
         if (!file) return false;
-        progress(received, total.value_or(0));
+        progress(received, total);
         return true;
       },
       stop_token);
