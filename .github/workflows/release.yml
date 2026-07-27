@@ -40,6 +40,7 @@ concurrency:
 jobs:
   build-and-release:
     name: Build + GitHub Release
+    if: github.ref == 'refs/heads/stable'
     runs-on: windows-latest
     timeout-minutes: 45
 
@@ -49,6 +50,14 @@ jobs:
         with:
           # Need full history only if we ever diff; shallow is fine for build
           fetch-depth: 1
+
+      - name: Set compiler cache directory
+        shell: pwsh
+        run: |
+          # runner.temp is available after the job has started, not while
+          # GitHub validates job-level environment expressions.
+          "CCACHE_DIR=$env:RUNNER_TEMP\ccache" |
+            Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Read product version
         id: version
@@ -100,6 +109,73 @@ jobs:
           "name=$chosen" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Using PlatformToolset=$chosen"
 
+      - name: Restore MSVC compiler cache
+        # Pinned action revision; installs a checksum-verified ccache >= 4.10
+        # (required for MSVC /Yc + /Yu precompiled-header support).
+        uses: hendrikmuhs/ccache-action@9e72c68cf32eb51fa30568928aca57ff79155270
+        with:
+          variant: ccache
+          install: binary
+          key: release-${{ runner.os }}-${{ steps.toolset.outputs.name }}-x64
+          max-size: 1G
+          verbose: 1
+
+      - name: Configure ccache for MSBuild and PCH
+        shell: pwsh
+        run: |
+          $versionText = (& ccache --version | Select-Object -First 1)
+          $versionMatch = [regex]::Match($versionText, '(\d+)\.(\d+)\.(\d+)')
+          if (-not $versionMatch.Success) {
+            throw "Could not determine ccache version from '$versionText'"
+          }
+          $version = [version]$versionMatch.Value
+          if ($version -lt [version]'4.10.0') {
+            throw "ccache $version is too old; MSVC PCH caching requires 4.10+"
+          }
+
+          # ccache must masquerade as cl.exe when invoked directly by a
+          # .vcxproj. It then locates the real compiler later on PATH.
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $install = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $install) {
+            throw "Could not locate the Visual C++ tools"
+          }
+
+          $toolset = "${{ steps.toolset.outputs.name }}"
+          $versionPrefix = switch ($toolset) {
+            "v145" { "14.5" }
+            "v143" { "14.3" }
+            "v142" { "14.2" }
+            default { throw "Unsupported PlatformToolset '$toolset'" }
+          }
+          $compiler = Get-ChildItem "$install\VC\Tools\MSVC" -Directory |
+            Where-Object Name -Like "$versionPrefix*" |
+            Sort-Object { [version]$_.Name } -Descending |
+            ForEach-Object { Join-Path $_.FullName "bin\Hostx64\x64\cl.exe" } |
+            Where-Object { Test-Path -LiteralPath $_ } |
+            Select-Object -First 1
+          if (-not $compiler) {
+            throw "Could not locate cl.exe for PlatformToolset=$toolset"
+          }
+
+          $wrapperDirectory = Join-Path $env:RUNNER_TEMP "ccache-msvc"
+          $wrapper = Join-Path $wrapperDirectory "cl.exe"
+          New-Item -ItemType Directory -Force -Path $wrapperDirectory | Out-Null
+          Copy-Item -LiteralPath (Get-Command ccache.exe).Source -Destination $wrapper -Force
+
+          # PCH use requires these two documented ccache settings. Compiler
+          # arguments, source/header contents, compiler binary, and PCH data
+          # remain part of the cache key.
+          ccache --set-config "base_dir=$env:GITHUB_WORKSPACE"
+          ccache --set-config "sloppiness=pch_defines,time_macros"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          (Split-Path -Parent $compiler) | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "CCACHE_CL_WRAPPER=$wrapper" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using $versionText with $compiler"
+
       - name: Build optimized Release x64
         shell: pwsh
         run: |
@@ -127,6 +203,9 @@ jobs:
             /p:EnableCOMDATFolding=true `
             /p:OptimizeReferences=true `
             /p:LinkIncremental=false `
+            "/p:CLToolExe=$env:CCACHE_CL_WRAPPER" `
+            /p:TrackFileAccess=false `
+            /p:UseMultiToolTask=true `
             /m `
             /v:minimal `
             /nologo

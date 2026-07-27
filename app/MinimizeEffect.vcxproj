@@ -102,6 +102,8 @@
       <ControlFlowGuard>Guard</ControlFlowGuard>
       <ExceptionHandling>Sync</ExceptionHandling>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <!-- /Z7 embeds debug data in each .obj, making MSVC output safely cacheable. -->
+      <DebugInformationFormat>OldStyle</DebugInformationFormat>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
