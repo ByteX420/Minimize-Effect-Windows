@@ -253,10 +253,9 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.4.1
-            - **Reliable update checks** — the in-app updater now uses the current Minimize-Effect-Windows release repository, ensuring that update availability, downloads, and verification resolve against the right project
-            - **Faster release builds** — GitHub Actions now reuses MSVC compilation results and precompiled headers between runs, substantially reducing repeat build time when source files are unchanged
-            - **More robust Windows builds** — required system libraries are declared centrally in the project configuration for clearer, more predictable builds
+            ### Changes in 1.4.2
+            - **Clean MSVC build** — resolved all compiler and linker warnings across Debug and Release targets
+            - **Third-party warning suppression** — properly configured MSVC project options to suppress external ImGui and FreeType warnings without modifying third-party source files
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
