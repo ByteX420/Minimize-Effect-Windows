@@ -66,6 +66,7 @@
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>$(ProjectDir)third_party\freetype\lib\freetype.lib;d3d11.lib;dxgi.lib;dwmapi.lib;dcomp.lib;d3dcompiler.lib;shell32.lib;ole32.lib;oleaut32.lib;comdlg32.lib;bcrypt.lib;winhttp.lib;version.lib;uiautomationcore.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -81,6 +82,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <UACExecutionLevel Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">AsInvoker</UACExecutionLevel>
+      <IgnoreSpecificDefaultLibraries>LIBCMT;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
@@ -228,6 +230,7 @@
     <ClCompile Include="third_party\imgui\imgui_widgets.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <ProgramDataBaseFileName>$(IntDir)imgui.pdb</ProgramDataBaseFileName>
+      <DisableSpecificWarnings>4189;4456;4702;%(DisableSpecificWarnings)</DisableSpecificWarnings>
     </ClCompile>
     <ClCompile Include="third_party\imgui\backends\imgui_impl_dx11.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
