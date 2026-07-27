@@ -253,9 +253,10 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.4.0
-            - **In-app software update service** — opt-in GitHub Releases update check, background package verification, and seamless version handover directly within the settings workspace
-            - **Refined update motion & loading UI** — smooth, synchronized update workspace transitions with a redesigned frosted hero badge loading indicator and phase-aware vector icons
+            ### Changes in 1.4.1
+            - **Reliable update checks** — the in-app updater now uses the current Minimize-Effect-Windows release repository, ensuring that update availability, downloads, and verification resolve against the right project
+            - **Faster release builds** — GitHub Actions now reuses MSVC compilation results and precompiled headers between runs, substantially reducing repeat build time when source files are unchanged
+            - **More robust Windows builds** — required system libraries are declared centrally in the project configuration for clearer, more predictable builds
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
