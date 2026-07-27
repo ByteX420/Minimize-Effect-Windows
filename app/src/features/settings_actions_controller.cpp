@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,6 @@
 #include "core/logger.hpp"
 
 #include <commdlg.h>
-#pragma comment(lib, "comdlg32.lib")
 #include "platform/windows/app_container_permissions.hpp"
 #include "platform/windows/display_info.hpp"
 #include "platform/windows/power_status.hpp"

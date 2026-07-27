@@ -13,10 +13,6 @@
 
 #include "core/logger.hpp"
 #include "platform/windows/taskbar_locator.hpp"
-#pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "oleaut32.lib")
-#pragma comment(lib, "uiautomationcore.lib")
-#pragma comment(lib, "version.lib")
 
 namespace minimize::platform {
 namespace {

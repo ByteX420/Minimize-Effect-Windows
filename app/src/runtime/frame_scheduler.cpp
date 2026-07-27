@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "runtime/frame_scheduler.hpp"
 
@@ -12,7 +12,6 @@
 #include "platform/windows/display_info.hpp"
 #include "platform/windows/window_state.hpp"
 
-#pragma comment(lib, "winmm.lib")
 
 namespace minimize::runtime {
 

@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#pragma comment(lib, "version.lib")
 
 namespace minimize::platform {
 namespace {

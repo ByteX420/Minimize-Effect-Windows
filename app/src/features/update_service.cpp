@@ -17,8 +17,6 @@
 
 #include "platform/windows/process_info.hpp"
 
-#pragma comment(lib, "bcrypt.lib")
-#pragma comment(lib, "winhttp.lib")
 
 namespace minimize::features {
 namespace {
