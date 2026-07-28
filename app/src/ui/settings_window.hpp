@@ -129,8 +129,6 @@ private:
   bool restore_slider_dirty_ = false;
   ui::AnimationPreview animation_preview_;
   ui::ApplicationListProvider application_list_provider_;
-  bool window_dragging_ = false;
-  POINT window_drag_offset_{};
   ui::TrayIcon tray_icon_;
   bool render_requested_ = false;
   ULONGLONG shown_at_ms_ = 0;

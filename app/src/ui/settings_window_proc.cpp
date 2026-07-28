@@ -38,52 +38,6 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
     return 0;
   }
 
-  // Avoid DefWindowProc's modal caption-move loop. It blocks the application
-  // thread and freezes active Minimize animations while the settings window is dragged.
-  if (settings != nullptr && message == WM_LBUTTONDOWN) {
-    const POINT client_point{static_cast<short>(LOWORD(l_param)),
-                             static_cast<short>(HIWORD(l_param))};
-    RECT client{};
-    GetClientRect(hwnd, &client);
-    // Keep the whole traffic-light cluster out of the custom titlebar drag zone.
-    const LONG traffic_lights_end = static_cast<LONG>(140.0f * scale);
-    const LONG header_actions_start = client.right - static_cast<LONG>(220.0f * scale);
-    if (client_point.y >= 0 && client_point.y < static_cast<LONG>(kHeaderHeight * scale) &&
-        client_point.x >= traffic_lights_end && client_point.x < header_actions_start) {
-      POINT cursor{};
-      RECT window_rect{};
-      GetCursorPos(&cursor);
-      GetWindowRect(hwnd, &window_rect);
-      settings->window_drag_offset_ =
-          POINT{cursor.x - window_rect.left, cursor.y - window_rect.top};
-      settings->window_dragging_ = true;
-      SetCapture(hwnd);
-      return 0;
-    }
-  }
-  if (settings != nullptr && message == WM_MOUSEMOVE && settings->window_dragging_) {
-    if ((w_param & MK_LBUTTON) == 0) {
-      settings->window_dragging_ = false;
-      if (GetCapture() == hwnd) ReleaseCapture();
-      return 0;
-    }
-    POINT cursor{};
-    GetCursorPos(&cursor);
-    SetWindowPos(hwnd, nullptr, cursor.x - settings->window_drag_offset_.x,
-                 cursor.y - settings->window_drag_offset_.y, 0, 0,
-                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-    settings->ForceRender();
-    return 0;
-  }
-  if (settings != nullptr && message == WM_LBUTTONUP && settings->window_dragging_) {
-    settings->window_dragging_ = false;
-    if (GetCapture() == hwnd) ReleaseCapture();
-    return 0;
-  }
-  if (settings != nullptr && (message == WM_CAPTURECHANGED || message == WM_CANCELMODE)) {
-    settings->window_dragging_ = false;
-  }
-
   if (settings != nullptr && settings->editing_hotkey_ >= 0 &&
       (message == WM_KEYDOWN || message == WM_SYSKEYDOWN)) {
     const UINT virtual_key = static_cast<UINT>(w_param);
@@ -263,8 +217,20 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
         settings->HandleCloseRequest();
       }
       return 0;
-    case WM_NCHITTEST:
+    case WM_NCHITTEST: {
+      if (settings == nullptr) return HTCLIENT;
+      POINT point{static_cast<short>(LOWORD(l_param)), static_cast<short>(HIWORD(l_param))};
+      if (!ScreenToClient(hwnd, &point)) return HTCLIENT;
+      RECT client{};
+      GetClientRect(hwnd, &client);
+      const LONG traffic_lights_end = static_cast<LONG>(140.0f * scale);
+      const LONG header_actions_start = client.right - static_cast<LONG>(220.0f * scale);
+      if (point.y >= 0 && point.y < static_cast<LONG>(kHeaderHeight * scale) &&
+          point.x >= traffic_lights_end && point.x < header_actions_start) {
+        return HTCAPTION;
+      }
       return HTCLIENT;
+    }
     default:
       return DefWindowProcW(hwnd, message, w_param, l_param);
   }
