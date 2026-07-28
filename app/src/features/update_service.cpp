@@ -2,14 +2,17 @@
 
 #include "features/update_service.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <limits>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
 #include <winrt/Windows.Web.Http.h>
@@ -25,9 +28,8 @@ namespace minimize::features {
 namespace {
 
 constexpr wchar_t kReleaseApiUrl[] =
-    L"https://api.github.com/repos/ByteX420/Minimize-Effect-Windows/releases/latest";
+    L"https://api.github.com/repos/ByteX420/Minimize-Effect-Windows/releases?per_page=100";
 constexpr char kPackageName[] = "MinimizeEffect-windows-x64.zip";
-constexpr char kChecksumName[] = "MinimizeEffect-windows-x64.zip.sha256";
 constexpr std::uint64_t kMaximumDownloadBytes = 256ULL * 1024ULL * 1024ULL;
 
 std::wstring Utf8ToWide(std::string_view value) {
@@ -175,19 +177,41 @@ void CleanupInstalledBackups(std::stop_token stop_token) {
 struct ParsedVersion {
   std::array<unsigned long, 4> parts{};
   std::size_t count = 0;
+  std::vector<std::string> prerelease;
+
+  [[nodiscard]] bool IsPrerelease() const noexcept { return !prerelease.empty(); }
 };
 
 std::optional<ParsedVersion> ParseVersion(std::string_view value) {
-  while (!value.empty() && (value.front() == 'v' || value.front() == 'V' || value.front() == ' ')) {
+  while (!value.empty() && value.front() == ' ') value.remove_prefix(1);
+  while (!value.empty() && value.back() == ' ') value.remove_suffix(1);
+  if (!value.empty() && (value.front() == 'v' || value.front() == 'V')) {
     value.remove_prefix(1);
   }
+  if (value.empty()) return std::nullopt;
+
+  const std::size_t metadata_separator = value.find('+');
+  if (metadata_separator != std::string_view::npos) {
+    if (metadata_separator + 1 == value.size()) return std::nullopt;
+    value = value.substr(0, metadata_separator);
+  }
+
+  std::string_view core = value;
+  std::string_view prerelease;
+  const std::size_t prerelease_separator = value.find('-');
+  if (prerelease_separator != std::string_view::npos) {
+    core = value.substr(0, prerelease_separator);
+    prerelease = value.substr(prerelease_separator + 1);
+    if (prerelease.empty()) return std::nullopt;
+  }
+
   ParsedVersion result{};
   std::size_t position = 0;
-  while (position < value.size() && result.count < result.parts.size()) {
-    if (value[position] < '0' || value[position] > '9') return std::nullopt;
+  while (position < core.size() && result.count < result.parts.size()) {
+    if (core[position] < '0' || core[position] > '9') return std::nullopt;
     unsigned long part = 0;
-    while (position < value.size() && value[position] >= '0' && value[position] <= '9') {
-      const unsigned digit = static_cast<unsigned>(value[position] - '0');
+    while (position < core.size() && core[position] >= '0' && core[position] <= '9') {
+      const unsigned digit = static_cast<unsigned>(core[position] - '0');
       if (part > (std::numeric_limits<unsigned long>::max() - digit) / 10) {
         return std::nullopt;
       }
@@ -195,31 +219,118 @@ std::optional<ParsedVersion> ParseVersion(std::string_view value) {
       ++position;
     }
     result.parts[result.count++] = part;
-    if (position == value.size()) break;
-    if (value[position] != '.') return std::nullopt;
+    if (position == core.size()) break;
+    if (core[position] != '.') return std::nullopt;
     ++position;
   }
-  if (position != value.size() || result.count < 3) return std::nullopt;
+  if (position != core.size() || result.count < 3) return std::nullopt;
+
+  while (!prerelease.empty()) {
+    const std::size_t separator = prerelease.find('.');
+    const std::string_view identifier = prerelease.substr(0, separator);
+    if (identifier.empty()) return std::nullopt;
+    for (const char character : identifier) {
+      const bool valid = (character >= '0' && character <= '9') ||
+                         (character >= 'A' && character <= 'Z') ||
+                         (character >= 'a' && character <= 'z') || character == '-';
+      if (!valid) return std::nullopt;
+    }
+    result.prerelease.emplace_back(identifier);
+    if (separator == std::string_view::npos) break;
+    prerelease.remove_prefix(separator + 1);
+    if (prerelease.empty()) return std::nullopt;
+  }
   return result;
+}
+
+bool IsNumericIdentifier(std::string_view value) {
+  if (value.empty()) return false;
+  for (const char character : value) {
+    if (character < '0' || character > '9') return false;
+  }
+  return true;
+}
+
+std::string_view TrimNumericIdentifier(std::string_view value) {
+  const std::size_t first_non_zero = value.find_first_not_of('0');
+  return first_non_zero == std::string_view::npos ? value.substr(value.size() - 1)
+                                                  : value.substr(first_non_zero);
+}
+
+int CompareVersions(const ParsedVersion& left, const ParsedVersion& right) {
+  if (left.parts < right.parts) return -1;
+  if (left.parts > right.parts) return 1;
+  if (!left.IsPrerelease() && !right.IsPrerelease()) return 0;
+  if (!left.IsPrerelease()) return 1;
+  if (!right.IsPrerelease()) return -1;
+
+  const std::size_t common_count = (std::min)(left.prerelease.size(), right.prerelease.size());
+  for (std::size_t index = 0; index < common_count; ++index) {
+    std::string_view left_identifier = left.prerelease[index];
+    std::string_view right_identifier = right.prerelease[index];
+    const bool left_numeric = IsNumericIdentifier(left_identifier);
+    const bool right_numeric = IsNumericIdentifier(right_identifier);
+    if (left_numeric && right_numeric) {
+      left_identifier = TrimNumericIdentifier(left_identifier);
+      right_identifier = TrimNumericIdentifier(right_identifier);
+      if (left_identifier.size() < right_identifier.size()) return -1;
+      if (left_identifier.size() > right_identifier.size()) return 1;
+    } else if (left_numeric != right_numeric) {
+      return left_numeric ? -1 : 1;
+    }
+    if (left_identifier < right_identifier) return -1;
+    if (left_identifier > right_identifier) return 1;
+  }
+  if (left.prerelease.size() < right.prerelease.size()) return -1;
+  if (left.prerelease.size() > right.prerelease.size()) return 1;
+  return 0;
 }
 
 bool IsNewerVersion(std::string_view candidate, std::string_view current) {
   const auto candidate_version = ParseVersion(candidate);
   const auto current_version = ParseVersion(current);
   if (!candidate_version || !current_version) return false;
-  return candidate_version->parts > current_version->parts;
+  return CompareVersions(*candidate_version, *current_version) > 0;
 }
 
 bool IsSameVersion(std::string_view left, std::string_view right) {
   const auto left_version = ParseVersion(left);
   const auto right_version = ParseVersion(right);
-  return left_version && right_version && left_version->parts == right_version->parts;
+  return left_version && right_version && CompareVersions(*left_version, *right_version) == 0;
 }
 
 std::optional<std::string> JsonStringValue(const nlohmann::json& object, std::string_view key) {
   const auto value = object.find(key);
   if (value == object.end() || !value->is_string()) return std::nullopt;
   return value->get<std::string>();
+}
+
+const nlohmann::json* SelectBestRelease(const nlohmann::json& releases,
+                                        std::string_view current_version) {
+  const auto parsed_current = ParseVersion(current_version);
+  if (!parsed_current || !releases.is_array()) return nullptr;
+
+  // Stable users stay on the stable channel. Pre-release users can advance through
+  // beta/RC builds and eventually to the highest stable release.
+  const bool accept_prereleases = parsed_current->IsPrerelease();
+  const nlohmann::json* best_release = nullptr;
+  std::optional<ParsedVersion> best_version;
+  for (const auto& release : releases) {
+    if (!release.is_object() || release.value("draft", false)) continue;
+    const auto tag = JsonStringValue(release, "tag_name");
+    if (!tag) continue;
+    auto version = ParseVersion(*tag);
+    if (!version) continue;
+    if (!accept_prereleases &&
+        (version->IsPrerelease() || release.value("prerelease", false))) {
+      continue;
+    }
+    if (!best_version || CompareVersions(*version, *best_version) > 0) {
+      best_version = std::move(version);
+      best_release = &release;
+    }
+  }
+  return best_release;
 }
 
 std::optional<std::string> FindAssetValue(const nlohmann::json& release,
@@ -237,6 +348,24 @@ std::optional<std::string> FindAssetValue(const nlohmann::json& release,
 std::optional<std::string> FindAssetUrl(const nlohmann::json& release,
                                         std::string_view asset_name) {
   return FindAssetValue(release, asset_name, "browser_download_url");
+}
+
+std::optional<std::string> FindPackageName(const nlohmann::json& release,
+                                           std::string_view version) {
+  const std::array candidates = {
+      std::string(kPackageName),
+      std::string("MinimizeEffect-windows-x64-") + std::string(version) + ".zip",
+  };
+  const auto assets = release.find("assets");
+  if (assets == release.end() || !assets->is_array()) return std::nullopt;
+  for (const std::string& candidate : candidates) {
+    for (const auto& asset : *assets) {
+      if (asset.is_object() && asset.value("name", std::string{}) == candidate) {
+        return candidate;
+      }
+    }
+  }
+  return std::nullopt;
 }
 
 struct HttpResponse {
@@ -614,34 +743,52 @@ void UpdateService::CheckWorker(std::stop_token stop_token, bool user_initiated)
     return;
   }
 
-  const nlohmann::json release = nlohmann::json::parse(*response, nullptr, false);
-  if (release.is_discarded() || !release.is_object()) {
+  const nlohmann::json releases = nlohmann::json::parse(*response, nullptr, false);
+  if (releases.is_discarded() || !releases.is_array()) {
     UpdateSnapshot failed = GetSnapshot();
     failed.phase = UpdatePhase::kError;
-    failed.status = "Could not read the release";
+    failed.status = "Could not read the releases";
     failed.error = "GitHub returned malformed release metadata.";
     SetSnapshot(std::move(failed));
     return;
   }
+  const UpdateSnapshot current = GetSnapshot();
+  const nlohmann::json* selected_release =
+      SelectBestRelease(releases, current.current_version);
+  if (!selected_release) {
+    UpdateSnapshot failed = std::move(current);
+    failed.phase = UpdatePhase::kError;
+    failed.status = "Could not find a compatible release";
+    failed.error = "GitHub returned no valid release for this update channel.";
+    SetSnapshot(std::move(failed));
+    return;
+  }
+  const nlohmann::json& release = *selected_release;
   const auto tag = JsonStringValue(release, "tag_name");
   const auto release_page = JsonStringValue(release, "html_url");
   const auto release_notes = JsonStringValue(release, "body");
-  const auto package_url = FindAssetUrl(release, kPackageName);
-  const auto package_digest = FindAssetValue(release, kPackageName, "digest");
-  const auto api_checksum =
-      package_digest ? ParseChecksum(*package_digest) : std::optional<std::string>{};
-  const auto checksum_url = FindAssetUrl(release, kChecksumName);
   if (!tag || !release_page) {
     UpdateSnapshot failed = GetSnapshot();
     failed.phase = UpdatePhase::kError;
     failed.status = "The GitHub release is incomplete";
-    failed.error = "The latest release metadata could not be read.";
+    failed.error = "The selected release metadata could not be read.";
     SetSnapshot(std::move(failed));
     return;
   }
 
   std::string latest = *tag;
   if (!latest.empty() && (latest.front() == 'v' || latest.front() == 'V')) latest.erase(0, 1);
+  const auto package_name = FindPackageName(release, latest);
+  const auto package_url =
+      package_name ? FindAssetUrl(release, *package_name) : std::optional<std::string>{};
+  const auto package_digest =
+      package_name ? FindAssetValue(release, *package_name, "digest")
+                   : std::optional<std::string>{};
+  const auto api_checksum =
+      package_digest ? ParseChecksum(*package_digest) : std::optional<std::string>{};
+  const auto checksum_url =
+      package_name ? FindAssetUrl(release, *package_name + ".sha256")
+                   : std::optional<std::string>{};
   UpdateSnapshot next = GetSnapshot();
   next.latest_version = latest;
   next.release_page_url = *release_page;
