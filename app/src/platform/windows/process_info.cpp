@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 #include <wil/resource.h>
+#include <wil/token_helpers.h>
 
 
 namespace minimize::platform {
@@ -73,13 +74,9 @@ std::optional<std::string> GetWindowExecutableName(HWND window) {
 }
 
 bool IsCurrentProcessElevated() {
-  HANDLE token = nullptr;
-  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-  wil::unique_handle token_guard(token);
   TOKEN_ELEVATION elevation{};
-  DWORD size = sizeof(elevation);
-  return GetTokenInformation(token_guard.get(), TokenElevation, &elevation, sizeof(elevation),
-                             &size) &&
+  return SUCCEEDED(
+             wil::get_token_information_nothrow(&elevation, GetCurrentProcessToken())) &&
          elevation.TokenIsElevated != 0;
 }
 
