@@ -1,3 +1,4 @@
+#include <format>
 #include <iterator>
 #include <string_view>
 #include <windows.h>
@@ -65,13 +66,11 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
         else if (IsRestoreCommand(show_cmd))
           cmd_name = L"RESTORE";
 
-        wchar_t log_buf[512]{};
-        _snwprintf_s(log_buf, std::size(log_buf), _TRUNCATE,
-                     L"CBT HCBT_MINMAX: hwnd=0x%p cmd=%.*ls show_cmd=%d class=\"%ls\" "
-                     L"title=\"%ls\"",
-                     static_cast<void*>(target_window), static_cast<int>(cmd_name.size()),
-                     cmd_name.data(), show_cmd, class_name, title);
-        minimize::core::LogTrace(L"HookDLL", log_buf);
+        minimize::core::LogTrace(
+            L"HookDLL",
+            std::format(L"CBT HCBT_MINMAX: hwnd={} cmd={} show_cmd={} class=\"{}\" title=\"{}\"",
+                        static_cast<const void*>(target_window), cmd_name, show_cmd, class_name,
+                        title));
       }
 
       if (IsMinimizeCommand(show_cmd)) {
@@ -93,10 +92,9 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
             }
             const DWORD error = GetLastError();
             if (minimize::core::IsTraceLoggingEnabled()) {
-              wchar_t err_buf[128]{};
-              swprintf_s(err_buf, std::size(err_buf),
-                         L"PostMessage(MinimizeMinimizeAttempt) failed error=%lu", error);
-              minimize::core::LogDebug(L"HookDLL", err_buf);
+              minimize::core::LogDebug(
+                  L"HookDLL",
+                  std::format(L"PostMessage(MinimizeMinimizeAttempt) failed error={}", error));
             }
           }
         } else {
@@ -124,10 +122,10 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
             if (send_result == 0) {
               const DWORD error = GetLastError();
               if (minimize::core::IsTraceLoggingEnabled()) {
-                wchar_t err_buf[128]{};
-                swprintf_s(err_buf, std::size(err_buf),
-                           L"SendMessageTimeout(MinimizeRestoreAttempt) failed error=%lu", error);
-                minimize::core::LogDebug(L"HookDLL", err_buf);
+                minimize::core::LogDebug(
+                    L"HookDLL",
+                    std::format(L"SendMessageTimeout(MinimizeRestoreAttempt) failed error={}",
+                                error));
               }
             }
             if (handled != 0) {

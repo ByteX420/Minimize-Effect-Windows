@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cstdio>
 #include <cstdlib>
 #include <format>
 #include <unordered_map>
@@ -206,15 +205,13 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   // Fixed chip from min/max glyphs — rail width never jumps with the value.
   // Use full baked font size so glyphs are never soft-scaled or clipped.
   const float value_font_sz = label_font->FontSize;
-  char probe_lo[32]{};
-  char probe_hi[32]{};
-  std::snprintf(probe_lo, sizeof(probe_lo), "%.*f%s", display_precision,
-                minimum * display_multiplier, display_suffix);
-  std::snprintf(probe_hi, sizeof(probe_hi), "%.*f%s", display_precision,
-                maximum * display_multiplier, display_suffix);
+  const std::string probe_lo =
+      std::format("{:.{}f}{}", minimum * display_multiplier, display_precision, display_suffix);
+  const std::string probe_hi =
+      std::format("{:.{}f}{}", maximum * display_multiplier, display_precision, display_suffix);
   const float probe_w =
-      std::max(label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, probe_lo).x,
-               label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, probe_hi).x);
+      std::max(label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, probe_lo.c_str()).x,
+               label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, probe_hi.c_str()).x);
   const float value_chip_w = std::max(36.0f * scale, probe_w + 8.0f * scale);
   const float value_gap = 6.0f * scale;
   const float track_end = origin.x + width - value_chip_w - value_gap;
@@ -260,8 +257,10 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   bool editing = *mode > 0;
   if (editing) {
     if (*mode == 1) {
-      std::snprintf(input_buffer.data(), input_buffer.size(), "%.*f", display_precision,
-                    *value * display_multiplier);
+      const auto result =
+          std::format_to_n(input_buffer.data(), input_buffer.size() - 1, "{:.{}f}",
+                           *value * display_multiplier, display_precision);
+      *result.out = '\0';
       ImGui::SetKeyboardFocusHere();
       *mode = 2;
     }
@@ -357,10 +356,10 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   draw->AddRect(pearl_min, pearl_max, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.16f * alpha)),
                 pearl_r, 0, std::max(1.0f, scale));
 
-  char display[32]{};
-  std::snprintf(display, sizeof(display), "%.*f%s", display_precision, *value * display_multiplier,
-                display_suffix);
-  const ImVec2 display_size = label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, display);
+  const std::string display =
+      std::format("{:.{}f}{}", *value * display_multiplier, display_precision, display_suffix);
+  const ImVec2 display_size =
+      label_font->CalcTextSizeA(value_font_sz, FLT_MAX, 0.0f, display.c_str());
   const bool value_hovered = ImGui::IsMouseHoveringRect(value_box_min, value_box_max, false);
   const float value_hover = reference_motion.AnimateValue(
       detail::MotionKey("menu.slider", id, "value-box"), (*mode > 0 || value_hovered) ? 1.0f : 0.0f,
@@ -382,7 +381,7 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
     const float text_y = CenteredTextTop(label_font, value_box_min.y, value_box_height);
     draw->AddText(label_font, value_font_sz, ImVec2(text_x, text_y),
                   ImGui::GetColorU32(ImVec4(value_color.x, value_color.y, value_color.z, alpha)),
-                  display);
+                  display.c_str());
     ImGui::SetCursorScreenPos(value_box_min);
     ImGui::InvisibleButton("##value_button", ImVec2(value_box_width, value_box_height));
     if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) *mode = 1;

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cwchar>
 #include <cwctype>
+#include <format>
 #include <oleauto.h>
 #include <shellapi.h>
 #include <uiautomation.h>
@@ -66,13 +67,13 @@ std::wstring GetProcessDescription(const std::wstring& process_path) {
     return {};
   }
 
-  wchar_t sub_block[256]{};
-  swprintf_s(sub_block, L"\\StringFileInfo\\%04x%04x\\FileDescription", translations[0].language,
-             translations[0].codepage);
+  const std::wstring sub_block =
+      std::format(L"\\StringFileInfo\\{:04x}{:04x}\\FileDescription",
+                  translations[0].language, translations[0].codepage);
 
   wchar_t* description = nullptr;
   UINT desc_len = 0;
-  if (VerQueryValueW(buffer.data(), sub_block, reinterpret_cast<LPVOID*>(&description),
+  if (VerQueryValueW(buffer.data(), sub_block.c_str(), reinterpret_cast<LPVOID*>(&description),
                      &desc_len) &&
       description != nullptr) {
     return std::wstring(description, desc_len);

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <format>
 #include <unordered_map>
 
 #include "ui/components/component_helpers.hpp"
@@ -168,8 +169,7 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
   bool changed = false;
   const bool show_popup = session_active && popup_height > 0.5f;
   if (show_popup) {
-    char win_name[96];
-    std::snprintf(win_name, sizeof(win_name), "##combo_dd_%u", popup_id);
+    const std::string win_name = std::format("##combo_dd_{}", popup_id);
     ImGui::SetNextWindowPos(popup_position);
     ImGui::SetNextWindowSize(ImVec2(frame_width, popup_height));
     ImGui::SetNextWindowBgAlpha(0.0f);
@@ -185,7 +185,7 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBackground |
         ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNavFocus |
         ImGuiWindowFlags_NoCollapse;
-    if (ImGui::Begin(win_name, nullptr, dd_flags)) {
+    if (ImGui::Begin(win_name.c_str(), nullptr, dd_flags)) {
       ImDrawList* popup_draw = ImGui::GetWindowDrawList();
       const ImVec2 popup_min = ImGui::GetWindowPos();
       const ImVec2 popup_max(popup_min.x + frame_width, popup_min.y + popup_height);

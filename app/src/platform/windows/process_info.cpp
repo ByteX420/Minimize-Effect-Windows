@@ -113,12 +113,12 @@ std::string FileProductVersion(std::wstring_view file_path) {
   if (VerQueryValueW(buffer.data(), L"\\VarFileInfo\\Translation",
                      reinterpret_cast<LPVOID*>(&translations), &translation_bytes) &&
       translations != nullptr && translation_bytes >= sizeof(Translation)) {
-    wchar_t key[64]{};
-    swprintf_s(key, L"\\StringFileInfo\\%04x%04x\\ProductVersion", translations[0].language,
-               translations[0].codepage);
+    const std::wstring key =
+        std::format(L"\\StringFileInfo\\{:04x}{:04x}\\ProductVersion",
+                    translations[0].language, translations[0].codepage);
     wchar_t* product_version = nullptr;
     UINT product_length = 0;
-    if (VerQueryValueW(buffer.data(), key, reinterpret_cast<LPVOID*>(&product_version),
+    if (VerQueryValueW(buffer.data(), key.c_str(), reinterpret_cast<LPVOID*>(&product_version),
                        &product_length) &&
         product_version != nullptr && product_length > 1) {
       std::wstring version(product_version);
