@@ -9,17 +9,58 @@
 namespace minimize::rendering {
 namespace {
 
-float WindowCornerRadius(HWND window) {
-  if (window == nullptr || !IsWindow(window) || IsZoomed(window)) return 0.0f;
+bool RectsNearlyEqual(const RECT& left, const RECT& right, LONG tolerance) {
+  return std::abs(left.left - right.left) <= tolerance &&
+         std::abs(left.top - right.top) <= tolerance &&
+         std::abs(left.right - right.right) <= tolerance &&
+         std::abs(left.bottom - right.bottom) <= tolerance;
+}
 
-  DWORD corner_preference = 0;
+bool IsSnapped(HWND window) {
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  RECT current_rect{};
+  if (!GetWindowPlacement(window, &placement) || !GetWindowRect(window, &current_rect) ||
+      placement.showCmd != SW_SHOWNORMAL) {
+    return false;
+  }
+
+  RECT normal_rect = placement.rcNormalPosition;
+  const LONG_PTR extended_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
+  if ((extended_style & WS_EX_TOOLWINDOW) == 0) {
+    MONITORINFO monitor_info{};
+    monitor_info.cbSize = sizeof(monitor_info);
+    const HMONITOR monitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
+    if (monitor != nullptr && GetMonitorInfoW(monitor, &monitor_info)) {
+      OffsetRect(&normal_rect, monitor_info.rcWork.left - monitor_info.rcMonitor.left,
+                 monitor_info.rcWork.top - monitor_info.rcMonitor.top);
+    }
+  }
+
+  const LONG tolerance =
+      std::max<LONG>(1, MulDiv(2, std::max(GetDpiForWindow(window), 96U), 96));
+  return !RectsNearlyEqual(current_rect, normal_rect, tolerance);
+}
+
+float WindowCornerRadius(HWND window) {
+  if (window == nullptr || !IsWindow(window) || IsZoomed(window) || IsSnapped(window)) return 0.0f;
+
+  DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_DEFAULT;
   constexpr auto kWindowCornerPreference = static_cast<DWMWINDOWATTRIBUTE>(33);
   if (FAILED(DwmGetWindowAttribute(window, kWindowCornerPreference, &corner_preference,
                                    sizeof(corner_preference))) ||
-      corner_preference == 1) {
+      corner_preference == DWMWCP_DONOTROUND) {
     return 0.0f;
   }
-  const int base_radius = corner_preference == 3 ? 8 : 12;
+
+  if (corner_preference == DWMWCP_DEFAULT) {
+    const LONG_PTR style = GetWindowLongPtrW(window, GWL_STYLE);
+    if ((style & (WS_CAPTION | WS_THICKFRAME)) == 0) return 0.0f;
+  }
+
+  // Windows 11's effective DWM radii are 8 px for normal top-level windows and
+  // 4 px for the small-corner preference at 96 DPI.
+  const int base_radius = corner_preference == DWMWCP_ROUNDSMALL ? 4 : 8;
   return static_cast<float>(MulDiv(base_radius, std::max(GetDpiForWindow(window), 96U), 96));
 }
 
@@ -51,7 +92,6 @@ WindowVisualMetadata QueryWindowVisualMetadata(HWND window) {
   if (window == nullptr || !IsWindow(window)) return metadata;
 
   metadata.window_region = WindowRegion(window);
-  metadata.corner_radius = metadata.window_region.is_set ? 0.0f : WindowCornerRadius(window);
 
   const LONG_PTR extended_style = GetWindowLongPtrW(window, GWL_EXSTYLE);
   metadata.is_layered = (extended_style & WS_EX_LAYERED) != 0;
@@ -62,6 +102,9 @@ WindowVisualMetadata QueryWindowVisualMetadata(HWND window) {
     metadata.has_per_pixel_alpha =
         GetLayeredWindowAttributes(window, &color_key, &alpha, &flags) == FALSE;
   }
+  metadata.corner_radius =
+      metadata.window_region.is_set || metadata.has_per_pixel_alpha ? 0.0f
+                                                                    : WindowCornerRadius(window);
 
   if (!IsZoomed(window)) {
     const UINT dpi = std::max(GetDpiForWindow(window), 96U);
