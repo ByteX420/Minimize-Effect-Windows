@@ -322,15 +322,10 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.5.0-beta.2
-            - Direct GPU VRAM texture copying via CopySubresourceRegion (97.9% capture latency reduction).
-            - Precompiled HLSL shaders at build time (eliminates runtime D3DCompile & d3dcompiler_47.dll).
-            - In-memory window state management with std::shared_mutex (eliminates SetPropW kernel atom injection).
-            - Native Win32 WM_NCHITTEST titlebar dragging (smooth DWM window movement & Snap Layouts support).
-            - Matched overlay window corner rounding and DWM corner preferences for snapped and rounded windows.
-            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
-            - Event-driven power setting notification monitoring instead of polling loops.
-            - Modern C++20 std::format string formatting and in-process zip extraction via miniz.
+            ### Changes in 1.5.0-beta.3
+            - Configurable reversal animation (custom duration, easing curves & bezier controls when animations are interrupted mid-motion).
+            - Auto-hide taskbar detection (unhides and reveals the Windows taskbar during minimize animations for a smooth landing).
+            - Fixed pre-release update progression (correct tag comparisons for beta-to-beta and rc updates).
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
@@ -368,15 +363,10 @@ jobs:
             Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
             This build may be unstable and does not replace the latest stable download.
 
-            ### Changes in 1.5.0-beta.2
-            - Direct GPU VRAM texture copying via CopySubresourceRegion (97.9% capture latency reduction).
-            - Precompiled HLSL shaders at build time (eliminates runtime D3DCompile & d3dcompiler_47.dll).
-            - In-memory window state management with std::shared_mutex (eliminates SetPropW kernel atom injection).
-            - Native Win32 WM_NCHITTEST titlebar dragging (smooth DWM window movement & Snap Layouts support).
-            - Matched overlay window corner rounding and DWM corner preferences for snapped and rounded windows.
-            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
-            - Event-driven power setting notification monitoring instead of polling loops.
-            - Modern C++20 std::format string formatting and in-process zip extraction via miniz.
+            ### Changes in 1.5.0-beta.3
+            - Configurable reversal animation (custom duration, easing curves & bezier controls when animations are interrupted mid-motion).
+            - Auto-hide taskbar detection (unhides and reveals the Windows taskbar during minimize animations for a smooth landing).
+            - Fixed pre-release update progression (correct tag comparisons for beta-to-beta and rc updates).
 
             ### Install
             1. Download **${{ steps.package.outputs.name }}**
