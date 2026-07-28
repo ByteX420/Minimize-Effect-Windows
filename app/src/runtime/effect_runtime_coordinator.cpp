@@ -455,10 +455,8 @@ void ApplicationRuntime::UpdateFullscreenSuppression(bool force) {
 }
 
 void ApplicationRuntime::UpdatePowerState(bool force) {
-  const ULONGLONG now = GetTickCount64();
-  if (!force && now - last_power_check_ms_ < 5000) return;
-  last_power_check_ms_ = now;
-  const auto power_status = platform::QueryPowerStatus();
+  const auto power_status =
+      force ? power_status_monitor_.Current() : power_status_monitor_.ConsumeChange();
   if (!power_status.has_value()) return;
   const bool on_battery = power_status->on_battery;
   const bool saver_active = power_status->battery_saver_active;

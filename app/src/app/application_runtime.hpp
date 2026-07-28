@@ -25,6 +25,7 @@
 #include "platform/windows/cbt_hook_manager.hpp"
 #include "platform/windows/global_hotkey_manager.hpp"
 #include "platform/windows/native_animation_blocker.hpp"
+#include "platform/windows/power_status.hpp"
 #include "platform/windows/taskbar_target_provider.hpp"
 #include "rendering/d3d_device.hpp"
 #include "rendering/desktop_capture.hpp"
@@ -158,6 +159,7 @@ private:
   DWORD main_thread_id_ = 0;
   platform::windows::CbtHookManager cbt_hook_manager_;
   platform::windows::GlobalHotkeyManager hotkey_manager_;
+  platform::PowerStatusMonitor power_status_monitor_;
   runtime::SnapshotCache snapshot_cache_;
   BulkWindowAction bulk_window_action_ = BulkWindowAction::kNone;
   bool bulk_hotkey_locked_ = false;
@@ -175,7 +177,6 @@ private:
   runtime::RendererRecovery renderer_recovery_;
   bool effect_runtime_active_ = false;
   ULONGLONG last_fullscreen_check_ms_ = 0;
-  ULONGLONG last_power_check_ms_ = 0;
   unsigned int recent_missed_frames_ = 0;
   unsigned int recent_device_failures_ = 0;
   float avg_capture_duration_ms_ = 0.0f;

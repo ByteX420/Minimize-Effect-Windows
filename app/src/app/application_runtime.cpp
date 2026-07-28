@@ -104,6 +104,9 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
 
 bool ApplicationRuntime::StartRuntimeServices() {
   if (runtime_services_started_) return true;
+  if (!power_status_monitor_.Start()) {
+    minimize::core::LogDebug(L"Power", L"Power setting notifications could not be registered");
+  }
   HealLeftoverWindows();
   if (!CreateAnimationRenderer()) return false;
   hotkey_controller_.SetWindow(settings_window_.hwnd());
