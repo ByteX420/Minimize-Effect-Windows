@@ -173,6 +173,10 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
   }
 
   if (slot.overlay.active()) slot.overlay.CancelAnimation();
+  if (slot.auto_hide_taskbar_revealed) {
+    taskbar_target_provider_.ReleaseAutoHideTaskbar();
+    slot.auto_hide_taskbar_revealed = false;
+  }
   slot.animation_monitor = nullptr;
   slot.animation_frame_interval = std::chrono::steady_clock::duration::zero();
   SetRunState(run_index, runtime::RunState::kIdle);
@@ -393,6 +397,7 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
   // Safety net: any remaining tracked Minimize windows, still without SW_RESTORE.
   window_recovery_service_.HealUntrackedWindows();
   platform::windows::properties::ClearAllState();
+  taskbar_target_provider_.RestoreAutoHideTaskbar();
 
   runs_.ShutdownOverlays();
   settings_window_.Shutdown();

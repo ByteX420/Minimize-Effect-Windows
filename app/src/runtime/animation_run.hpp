@@ -35,6 +35,7 @@ struct AnimationRun {
   std::chrono::steady_clock::duration animation_frame_interval{};
   std::chrono::steady_clock::time_point next_animation_frame_time{};
   bool live_animation_capture_enabled = false;
+  bool auto_hide_taskbar_revealed = false;
   RunState state = RunState::kIdle;
   ULONGLONG state_entered_ms = 0;
 };

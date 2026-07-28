@@ -140,6 +140,10 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     }
     if (context.complete_restore) context.complete_restore(window);
     run.animating_restore = false;
+    if (!run.auto_hide_taskbar_revealed) {
+      run.auto_hide_taskbar_revealed =
+          context.taskbar_targets->RevealAutoHideTaskbarForWindow(run.live_animation_bounds);
+    }
     run.overlay.ContinueMinimizeAnimation();
     run.direction_started_ms = GetTickCount64();
     context.set_state(run_index, runtime::RunState::kAnimating);
@@ -259,6 +263,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     context.set_state(run_index, runtime::RunState::kIdle);
     return false;
   }
+  run.auto_hide_taskbar_revealed =
+      context.taskbar_targets->RevealAutoHideTaskbarForWindow(source_bounds);
   const platform::TaskbarTarget target =
       context.taskbar_targets->GetTargetForWindow(window, source_bounds);
   runtime::CachedSnapshot snapshot;
@@ -278,6 +284,10 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
           !context.renderer_recovering && context.capture != nullptr && context.overlay != nullptr,
   });
   if (!transaction.has_value()) {
+    if (run.auto_hide_taskbar_revealed) {
+      context.taskbar_targets->ReleaseAutoHideTaskbar();
+      run.auto_hide_taskbar_revealed = false;
+    }
     context.set_state(run_index, runtime::RunState::kIdle);
     return false;
   }

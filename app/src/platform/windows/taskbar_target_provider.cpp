@@ -392,10 +392,109 @@ float Clamp(float value, float min_value, float max_value) {
   return std::clamp(value, min_value, max_value);
 }
 
+bool IsTaskbarMostlyVisible(HWND taskbar, const RECT& monitor_rect) {
+  RECT taskbar_rect{};
+  RECT visible_rect{};
+  if (taskbar == nullptr || !GetWindowRect(taskbar, &taskbar_rect) ||
+      !IntersectRect(&visible_rect, &taskbar_rect, &monitor_rect)) {
+    return false;
+  }
+
+  const LONG taskbar_width = taskbar_rect.right - taskbar_rect.left;
+  const LONG taskbar_height = taskbar_rect.bottom - taskbar_rect.top;
+  const LONG visible_width = visible_rect.right - visible_rect.left;
+  const LONG visible_height = visible_rect.bottom - visible_rect.top;
+  if (taskbar_width <= 0 || taskbar_height <= 0) return false;
+  return taskbar_width >= taskbar_height ? visible_height * 10 >= taskbar_height * 9
+                                        : visible_width * 10 >= taskbar_width * 9;
+}
+
 }  // namespace
 
+TaskbarTargetProvider::~TaskbarTargetProvider() { RestoreAutoHideTaskbar(); }
+
+bool TaskbarTargetProvider::RevealAutoHideTaskbarForWindow(const RECT& window_rect) {
+  if (auto_hide_temporarily_disabled_) {
+    ++auto_hide_reveal_count_;
+    auto_hide_restore_deadline_ms_ = 0;
+    return true;
+  }
+
+  HWND primary_taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
+  if (primary_taskbar == nullptr) return false;
+
+  APPBARDATA appbar_data{};
+  appbar_data.cbSize = sizeof(appbar_data);
+  appbar_data.hWnd = primary_taskbar;
+  const UINT_PTR current_state = SHAppBarMessage(ABM_GETSTATE, &appbar_data);
+  if ((current_state & ABS_AUTOHIDE) == 0) return false;
+
+  original_taskbar_state_ = current_state;
+  appbar_data.lParam = static_cast<LPARAM>(current_state & ~ABS_AUTOHIDE);
+  if (SHAppBarMessage(ABM_SETSTATE, &appbar_data) == FALSE) {
+    original_taskbar_state_ = 0;
+    return false;
+  }
+
+  auto_hide_temporarily_disabled_ = true;
+  auto_hide_reveal_count_ = 1;
+
+  HWND target_taskbar = FindTaskbarWindowForRect(window_rect);
+  HMONITOR monitor = MonitorFromRect(&window_rect, MONITOR_DEFAULTTONEAREST);
+  MONITORINFO monitor_info{};
+  monitor_info.cbSize = sizeof(monitor_info);
+  if (target_taskbar != nullptr && monitor != nullptr &&
+      GetMonitorInfoW(monitor, &monitor_info)) {
+    constexpr ULONGLONG kRevealTimeoutMs = 400;
+    const ULONGLONG deadline = GetTickCount64() + kRevealTimeoutMs;
+    while (!IsTaskbarMostlyVisible(target_taskbar, monitor_info.rcMonitor) &&
+           GetTickCount64() < deadline) {
+      DwmFlush();
+      Sleep(8);
+    }
+  }
+
+  core::LogTrace(L"Taskbar", L"Temporarily revealed auto-hide taskbar for minimize");
+  return true;
+}
+
+void TaskbarTargetProvider::ReleaseAutoHideTaskbar() {
+  if (auto_hide_reveal_count_ == 0) return;
+  --auto_hide_reveal_count_;
+  if (auto_hide_reveal_count_ == 0) {
+    constexpr ULONGLONG kAutoHideRestoreDelayMs = 500;
+    auto_hide_restore_deadline_ms_ = GetTickCount64() + kAutoHideRestoreDelayMs;
+    core::LogTrace(L"Taskbar", L"Keeping auto-hide taskbar visible for 500 ms after minimize");
+  }
+}
+
+void TaskbarTargetProvider::UpdateAutoHideTaskbarRestore() {
+  if (auto_hide_restore_deadline_ms_ != 0 &&
+      GetTickCount64() >= auto_hide_restore_deadline_ms_) {
+    RestoreAutoHideTaskbar();
+  }
+}
+
+void TaskbarTargetProvider::RestoreAutoHideTaskbar() {
+  auto_hide_reveal_count_ = 0;
+  auto_hide_restore_deadline_ms_ = 0;
+  if (!auto_hide_temporarily_disabled_) return;
+
+  HWND primary_taskbar = FindWindowW(L"Shell_TrayWnd", nullptr);
+  if (primary_taskbar == nullptr) return;
+
+  APPBARDATA appbar_data{};
+  appbar_data.cbSize = sizeof(appbar_data);
+  appbar_data.hWnd = primary_taskbar;
+  appbar_data.lParam = static_cast<LPARAM>(original_taskbar_state_);
+  SHAppBarMessage(ABM_SETSTATE, &appbar_data);
+  auto_hide_temporarily_disabled_ = false;
+  original_taskbar_state_ = 0;
+  core::LogTrace(L"Taskbar", L"Restored auto-hide taskbar after minimize");
+}
+
 TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
-                                                        const RECT& window_rect) const {
+                                                         const RECT& window_rect) const {
   RECT taskbar_rect{};
   const bool has_env = TryGetEnvironmentTarget(&taskbar_rect);
 

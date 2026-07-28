@@ -191,6 +191,7 @@ void ApplicationRuntime::DecayRenderingPressure(ULONGLONG now_ms) {
 }
 
 void ApplicationRuntime::UpdateRuntime() {
+  taskbar_target_provider_.UpdateAutoHideTaskbarRestore();
   UpdateTemporaryPause();
   UpdateFullscreenSuppression();
   UpdatePowerState();
