@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "rendering/desktop_capture.hpp"
 
@@ -14,6 +14,76 @@ namespace minimize::rendering {
 namespace {
 
 bool IsDeviceLostError(HRESULT hr) { return D3dDevice::IsDeviceLostError(hr); }
+
+TextureRotation ToTextureRotation(DXGI_MODE_ROTATION rotation) {
+  switch (rotation) {
+    case DXGI_MODE_ROTATION_ROTATE90:
+      return TextureRotation::kRotate90;
+    case DXGI_MODE_ROTATION_ROTATE180:
+      return TextureRotation::kRotate180;
+    case DXGI_MODE_ROTATION_ROTATE270:
+      return TextureRotation::kRotate270;
+    default:
+      return TextureRotation::kIdentity;
+  }
+}
+
+struct GpuCopyRegion {
+  D3D11_BOX source_box{};
+  UINT texture_width = 0;
+  UINT texture_height = 0;
+  TextureRotation texture_rotation = TextureRotation::kIdentity;
+};
+
+bool ResolveGpuCopyRegion(const RECT& clipped_rect, const RECT& desktop_coordinates,
+                          const D3D11_TEXTURE2D_DESC& frame_desc, DXGI_MODE_ROTATION rotation,
+                          GpuCopyRegion* region) {
+  if (region == nullptr) return false;
+  const int left = clipped_rect.left - desktop_coordinates.left;
+  const int top = clipped_rect.top - desktop_coordinates.top;
+  const int right = clipped_rect.right - desktop_coordinates.left;
+  const int bottom = clipped_rect.bottom - desktop_coordinates.top;
+
+  int physical_left = left;
+  int physical_top = top;
+  int physical_right = right;
+  int physical_bottom = bottom;
+  if (rotation == DXGI_MODE_ROTATION_ROTATE90) {
+    physical_left = top;
+    physical_top = static_cast<int>(frame_desc.Height) - right;
+    physical_right = bottom;
+    physical_bottom = static_cast<int>(frame_desc.Height) - left;
+  } else if (rotation == DXGI_MODE_ROTATION_ROTATE180) {
+    physical_left = static_cast<int>(frame_desc.Width) - right;
+    physical_top = static_cast<int>(frame_desc.Height) - bottom;
+    physical_right = static_cast<int>(frame_desc.Width) - left;
+    physical_bottom = static_cast<int>(frame_desc.Height) - top;
+  } else if (rotation == DXGI_MODE_ROTATION_ROTATE270) {
+    physical_left = static_cast<int>(frame_desc.Width) - bottom;
+    physical_top = left;
+    physical_right = static_cast<int>(frame_desc.Width) - top;
+    physical_bottom = right;
+  }
+  if (physical_left < 0 || physical_top < 0 || physical_right <= physical_left ||
+      physical_bottom <= physical_top ||
+      physical_right > static_cast<int>(frame_desc.Width) ||
+      physical_bottom > static_cast<int>(frame_desc.Height)) {
+    return false;
+  }
+
+  region->source_box = {
+      .left = static_cast<UINT>(physical_left),
+      .top = static_cast<UINT>(physical_top),
+      .front = 0,
+      .right = static_cast<UINT>(physical_right),
+      .bottom = static_cast<UINT>(physical_bottom),
+      .back = 1,
+  };
+  region->texture_width = static_cast<UINT>(physical_right - physical_left);
+  region->texture_height = static_cast<UINT>(physical_bottom - physical_top);
+  region->texture_rotation = ToTextureRotation(rotation);
+  return true;
+}
 
 void NormalizeCapturedAlpha(HWND window, WindowVisualMetadata* metadata,
                             std::vector<std::uint8_t>* pixels) {
@@ -226,6 +296,7 @@ bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rec
 
   captured_texture->texture = texture;
   captured_texture->shader_resource_view = shader_resource_view;
+  captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
   captured_texture->size = minimize::animation::SizeF{
       .width = static_cast<float>(capture_width),
       .height = static_cast<float>(capture_height),
@@ -306,6 +377,7 @@ bool DesktopCapture::AttachWindowVisuals(HWND window, const RECT& capture_rect,
   }
   captured_texture->mask_texture = std::move(mask_texture);
   captured_texture->mask_shader_resource_view = std::move(mask_view);
+  metadata.texture_rotation = captured_texture->visual_metadata.texture_rotation;
   captured_texture->visual_metadata = std::move(metadata);
   return true;
 }
@@ -347,6 +419,52 @@ bool DesktopCapture::CopyRegionFromFrame(OutputCapture* output, const RECT& scre
   DXGI_OUTDUPL_DESC dupl_desc{};
   output->duplication->GetDesc(&dupl_desc);
   const DXGI_MODE_ROTATION rotation = dupl_desc.Rotation;
+
+  if (rotation != DXGI_MODE_ROTATION_IDENTITY &&
+      rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
+    D3D11_TEXTURE2D_DESC frame_desc{};
+    source_frame->GetDesc(&frame_desc);
+    GpuCopyRegion copy_region;
+    if (!ResolveGpuCopyRegion(clipped_rect, output->desktop_coordinates, frame_desc, rotation,
+                              &copy_region)) {
+      return false;
+    }
+
+    D3D11_TEXTURE2D_DESC texture_desc{};
+    texture_desc.Width = copy_region.texture_width;
+    texture_desc.Height = copy_region.texture_height;
+    texture_desc.MipLevels = 1;
+    texture_desc.ArraySize = 1;
+    texture_desc.Format = output->latest_frame_format;
+    texture_desc.SampleDesc.Count = 1;
+    texture_desc.Usage = D3D11_USAGE_DEFAULT;
+    texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    Microsoft::WRL::ComPtr<ID3D11Texture2D> copied_texture;
+    HRESULT hr = d3d_device_->device()->CreateTexture2D(&texture_desc, nullptr, &copied_texture);
+    if (FAILED(hr)) {
+      if (IsDeviceLostError(hr)) MarkDeviceLost(L"CreateTexture2D rotated capture", hr);
+      return false;
+    }
+    d3d_device_->context()->CopySubresourceRegion(copied_texture.Get(), 0, 0, 0, 0, source_frame, 0,
+                                                  &copy_region.source_box);
+
+    Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shader_resource_view;
+    hr = d3d_device_->device()->CreateShaderResourceView(copied_texture.Get(), nullptr,
+                                                         &shader_resource_view);
+    if (FAILED(hr)) {
+      if (IsDeviceLostError(hr)) MarkDeviceLost(L"CreateShaderResourceView rotated capture", hr);
+      return false;
+    }
+    captured_texture->texture = std::move(copied_texture);
+    captured_texture->shader_resource_view = std::move(shader_resource_view);
+    captured_texture->size = {
+        .width = static_cast<float>(width),
+        .height = static_cast<float>(height),
+    };
+    captured_texture->visual_metadata.texture_rotation = copy_region.texture_rotation;
+    return true;
+  }
 
   if (rotation == DXGI_MODE_ROTATION_IDENTITY || rotation == DXGI_MODE_ROTATION_UNSPECIFIED) {
     D3D11_TEXTURE2D_DESC texture_desc{};
@@ -396,179 +514,14 @@ bool DesktopCapture::CopyRegionFromFrame(OutputCapture* output, const RECT& scre
 
     captured_texture->texture = copied_texture;
     captured_texture->shader_resource_view = shader_resource_view;
+    captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
     captured_texture->size = minimize::animation::SizeF{
         .width = static_cast<float>(width),
         .height = static_cast<float>(height),
     };
     return true;
   }
-
-  // Rotated output: map logical rect to physical coordinates on the frame buffer
-  int left_log = clipped_rect.left - output->desktop_coordinates.left;
-  int top_log = clipped_rect.top - output->desktop_coordinates.top;
-  int right_log = clipped_rect.right - output->desktop_coordinates.left;
-  int bottom_log = clipped_rect.bottom - output->desktop_coordinates.top;
-
-  D3D11_TEXTURE2D_DESC frame_desc{};
-  source_frame->GetDesc(&frame_desc);
-  int W_phys = static_cast<int>(frame_desc.Width);
-  int H_phys = static_cast<int>(frame_desc.Height);
-
-  int left_phys = 0, top_phys = 0, right_phys = 0, bottom_phys = 0;
-  if (rotation == DXGI_MODE_ROTATION_ROTATE90) {
-    left_phys = top_log;
-    top_phys = H_phys - right_log;
-    right_phys = bottom_log;
-    bottom_phys = H_phys - left_log;
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE180) {
-    left_phys = W_phys - right_log;
-    top_phys = H_phys - bottom_log;
-    right_phys = W_phys - left_log;
-    bottom_phys = H_phys - top_log;
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE270) {
-    left_phys = W_phys - bottom_log;
-    top_phys = left_log;
-    right_phys = W_phys - top_log;
-    bottom_phys = right_log;
-  }
-
-  int width_phys = right_phys - left_phys;
-  int height_phys = bottom_phys - top_phys;
-  if (width_phys <= 0 || height_phys <= 0) {
-    return false;
-  }
-
-  D3D11_TEXTURE2D_DESC staging_desc{};
-  staging_desc.Width = static_cast<UINT>(width_phys);
-  staging_desc.Height = static_cast<UINT>(height_phys);
-  staging_desc.MipLevels = 1;
-  staging_desc.ArraySize = 1;
-  staging_desc.Format = output->latest_frame_format;
-  staging_desc.SampleDesc.Count = 1;
-  staging_desc.Usage = D3D11_USAGE_STAGING;
-  staging_desc.BindFlags = 0;
-  staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_texture;
-  HRESULT hr = d3d_device_->device()->CreateTexture2D(&staging_desc, nullptr, &staging_texture);
-  if (FAILED(hr)) {
-    if (IsDeviceLostError(hr)) {
-      MarkDeviceLost(L"CreateTexture2D staging rotated window", hr);
-    }
-    return false;
-  }
-
-  D3D11_BOX source_box{};
-  source_box.left = static_cast<UINT>(left_phys);
-  source_box.top = static_cast<UINT>(top_phys);
-  source_box.front = 0;
-  source_box.right = static_cast<UINT>(right_phys);
-  source_box.bottom = static_cast<UINT>(bottom_phys);
-  source_box.back = 1;
-
-  d3d_device_->context()->CopySubresourceRegion(staging_texture.Get(), 0, 0, 0, 0, source_frame, 0,
-                                                &source_box);
-
-  D3D11_MAPPED_SUBRESOURCE mapped{};
-  hr = d3d_device_->context()->Map(staging_texture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-  if (FAILED(hr)) {
-    if (d3d_device_->IsDeviceLost(hr)) {
-      MarkDeviceLost(L"Map rotated capture staging texture", hr);
-    }
-    return false;
-  }
-
-  size_t bytes_per_pixel = 4;
-  if (output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_FLOAT ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_UNORM ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_SNORM ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_UINT ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_SINT) {
-    bytes_per_pixel = 8;
-  }
-
-  int W_dst = width;
-  int H_dst = height;
-  int W_src = width_phys;
-  int H_src = height_phys;
-
-  std::vector<std::uint8_t> dst_pixels(static_cast<size_t>(W_dst) * H_dst * bytes_per_pixel);
-  const std::uint8_t* src_pixels = reinterpret_cast<const std::uint8_t*>(mapped.pData);
-  size_t src_pitch_bytes = mapped.RowPitch;
-
-  auto copy_pixel = [&](int dx, int dy, int sx, int sy) {
-    const std::uint8_t* src_ptr = src_pixels + sy * src_pitch_bytes + sx * bytes_per_pixel;
-    std::uint8_t* dst_ptr = dst_pixels.data() + (dy * W_dst + dx) * bytes_per_pixel;
-    std::memcpy(dst_ptr, src_ptr, bytes_per_pixel);
-  };
-
-  if (rotation == DXGI_MODE_ROTATION_ROTATE90) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, y, H_src - 1 - x);
-      }
-    }
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE180) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, W_src - 1 - x, H_src - 1 - y);
-      }
-    }
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE270) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, W_src - 1 - y, x);
-      }
-    }
-  }
-
-  d3d_device_->context()->Unmap(staging_texture.Get(), 0);
-
-  D3D11_TEXTURE2D_DESC texture_desc{};
-  texture_desc.Width = static_cast<UINT>(W_dst);
-  texture_desc.Height = static_cast<UINT>(H_dst);
-  texture_desc.MipLevels = 1;
-  texture_desc.ArraySize = 1;
-  texture_desc.Format = output->latest_frame_format;
-  texture_desc.SampleDesc.Count = 1;
-  texture_desc.Usage = D3D11_USAGE_DEFAULT;
-  texture_desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-  D3D11_SUBRESOURCE_DATA initial_data{};
-  initial_data.pSysMem = dst_pixels.data();
-  initial_data.SysMemPitch = static_cast<UINT>(W_dst * bytes_per_pixel);
-
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> copied_texture;
-  hr = d3d_device_->device()->CreateTexture2D(&texture_desc, &initial_data, &copied_texture);
-  if (FAILED(hr)) {
-    if (IsDeviceLostError(hr)) {
-      MarkDeviceLost(L"CreateTexture2D captured window", hr);
-    }
-    return false;
-  }
-
-  D3D11_SHADER_RESOURCE_VIEW_DESC srv_desc{};
-  srv_desc.Format = texture_desc.Format;
-  srv_desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-  srv_desc.Texture2D.MipLevels = 1;
-
-  Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> shader_resource_view;
-  hr = d3d_device_->device()->CreateShaderResourceView(copied_texture.Get(), &srv_desc,
-                                                       &shader_resource_view);
-  if (FAILED(hr)) {
-    if (IsDeviceLostError(hr)) {
-      MarkDeviceLost(L"CreateShaderResourceView captured window", hr);
-    }
-    return false;
-  }
-
-  captured_texture->texture = copied_texture;
-  captured_texture->shader_resource_view = shader_resource_view;
-  captured_texture->size = minimize::animation::SizeF{
-      .width = static_cast<float>(W_dst),
-      .height = static_cast<float>(H_dst),
-  };
-  return true;
+  return false;
 }
 
 bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& screen_rect,
@@ -588,10 +541,6 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
 
   D3D11_TEXTURE2D_DESC texture_desc{};
   captured_texture->texture->GetDesc(&texture_desc);
-  if (texture_desc.Width != static_cast<UINT>(width) ||
-      texture_desc.Height != static_cast<UINT>(height)) {
-    return false;
-  }
 
   ID3D11Texture2D* source_frame = output->latest_frame.Get();
 
@@ -599,7 +548,28 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
   output->duplication->GetDesc(&dupl_desc);
   const DXGI_MODE_ROTATION rotation = dupl_desc.Rotation;
 
+  if (rotation != DXGI_MODE_ROTATION_IDENTITY &&
+      rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
+    D3D11_TEXTURE2D_DESC frame_desc{};
+    source_frame->GetDesc(&frame_desc);
+    GpuCopyRegion copy_region;
+    if (!ResolveGpuCopyRegion(clipped_rect, output->desktop_coordinates, frame_desc, rotation,
+                              &copy_region) ||
+        texture_desc.Width != copy_region.texture_width ||
+        texture_desc.Height != copy_region.texture_height) {
+      return false;
+    }
+    d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
+                                                  source_frame, 0, &copy_region.source_box);
+    captured_texture->visual_metadata.texture_rotation = copy_region.texture_rotation;
+    return true;
+  }
+
   if (rotation == DXGI_MODE_ROTATION_IDENTITY || rotation == DXGI_MODE_ROTATION_UNSPECIFIED) {
+    if (texture_desc.Width != static_cast<UINT>(width) ||
+        texture_desc.Height != static_cast<UINT>(height)) {
+      return false;
+    }
     D3D11_BOX source_box{};
     source_box.left = static_cast<UINT>(clipped_rect.left - output->desktop_coordinates.left);
     source_box.top = static_cast<UINT>(clipped_rect.top - output->desktop_coordinates.top);
@@ -610,134 +580,10 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
 
     d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
                                                   source_frame, 0, &source_box);
+    captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
     return true;
   }
-
-  // Rotated output
-  int left_log = clipped_rect.left - output->desktop_coordinates.left;
-  int top_log = clipped_rect.top - output->desktop_coordinates.top;
-  int right_log = clipped_rect.right - output->desktop_coordinates.left;
-  int bottom_log = clipped_rect.bottom - output->desktop_coordinates.top;
-
-  D3D11_TEXTURE2D_DESC frame_desc{};
-  source_frame->GetDesc(&frame_desc);
-  int W_phys = static_cast<int>(frame_desc.Width);
-  int H_phys = static_cast<int>(frame_desc.Height);
-
-  int left_phys = 0, top_phys = 0, right_phys = 0, bottom_phys = 0;
-  if (rotation == DXGI_MODE_ROTATION_ROTATE90) {
-    left_phys = top_log;
-    top_phys = H_phys - right_log;
-    right_phys = bottom_log;
-    bottom_phys = H_phys - left_log;
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE180) {
-    left_phys = W_phys - right_log;
-    top_phys = H_phys - bottom_log;
-    right_phys = W_phys - left_log;
-    bottom_phys = H_phys - top_log;
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE270) {
-    left_phys = W_phys - bottom_log;
-    top_phys = left_log;
-    right_phys = W_phys - top_log;
-    bottom_phys = right_log;
-  }
-
-  int width_phys = right_phys - left_phys;
-  int height_phys = bottom_phys - top_phys;
-  if (width_phys <= 0 || height_phys <= 0) {
-    return false;
-  }
-
-  D3D11_TEXTURE2D_DESC staging_desc{};
-  staging_desc.Width = static_cast<UINT>(width_phys);
-  staging_desc.Height = static_cast<UINT>(height_phys);
-  staging_desc.MipLevels = 1;
-  staging_desc.ArraySize = 1;
-  staging_desc.Format = output->latest_frame_format;
-  staging_desc.SampleDesc.Count = 1;
-  staging_desc.Usage = D3D11_USAGE_STAGING;
-  staging_desc.BindFlags = 0;
-  staging_desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-
-  Microsoft::WRL::ComPtr<ID3D11Texture2D> staging_texture;
-  HRESULT hr = d3d_device_->device()->CreateTexture2D(&staging_desc, nullptr, &staging_texture);
-  if (FAILED(hr)) {
-    if (IsDeviceLostError(hr)) {
-      MarkDeviceLost(L"CreateTexture2D staging rotated window", hr);
-    }
-    return false;
-  }
-
-  D3D11_BOX source_box{};
-  source_box.left = static_cast<UINT>(left_phys);
-  source_box.top = static_cast<UINT>(top_phys);
-  source_box.front = 0;
-  source_box.right = static_cast<UINT>(right_phys);
-  source_box.bottom = static_cast<UINT>(bottom_phys);
-  source_box.back = 1;
-
-  d3d_device_->context()->CopySubresourceRegion(staging_texture.Get(), 0, 0, 0, 0, source_frame, 0,
-                                                &source_box);
-
-  D3D11_MAPPED_SUBRESOURCE mapped{};
-  hr = d3d_device_->context()->Map(staging_texture.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-  if (FAILED(hr)) {
-    if (d3d_device_->IsDeviceLost(hr)) {
-      MarkDeviceLost(L"Map rotated refresh staging texture", hr);
-    }
-    return false;
-  }
-
-  size_t bytes_per_pixel = 4;
-  if (output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_FLOAT ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_UNORM ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_SNORM ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_UINT ||
-      output->latest_frame_format == DXGI_FORMAT_R16G16B16A16_SINT) {
-    bytes_per_pixel = 8;
-  }
-
-  int W_dst = width;
-  int H_dst = height;
-  int W_src = width_phys;
-  int H_src = height_phys;
-
-  std::vector<std::uint8_t> dst_pixels(static_cast<size_t>(W_dst) * H_dst * bytes_per_pixel);
-  const std::uint8_t* src_pixels = reinterpret_cast<const std::uint8_t*>(mapped.pData);
-  size_t src_pitch_bytes = mapped.RowPitch;
-
-  auto copy_pixel = [&](int dx, int dy, int sx, int sy) {
-    const std::uint8_t* src_ptr = src_pixels + sy * src_pitch_bytes + sx * bytes_per_pixel;
-    std::uint8_t* dst_ptr = dst_pixels.data() + (dy * W_dst + dx) * bytes_per_pixel;
-    std::memcpy(dst_ptr, src_ptr, bytes_per_pixel);
-  };
-
-  if (rotation == DXGI_MODE_ROTATION_ROTATE90) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, y, H_src - 1 - x);
-      }
-    }
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE180) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, W_src - 1 - x, H_src - 1 - y);
-      }
-    }
-  } else if (rotation == DXGI_MODE_ROTATION_ROTATE270) {
-    for (int y = 0; y < H_dst; ++y) {
-      for (int x = 0; x < W_dst; ++x) {
-        copy_pixel(x, y, W_src - 1 - y, x);
-      }
-    }
-  }
-
-  d3d_device_->context()->Unmap(staging_texture.Get(), 0);
-
-  d3d_device_->context()->UpdateSubresource(captured_texture->texture.Get(), 0, nullptr,
-                                            dst_pixels.data(),
-                                            static_cast<UINT>(W_dst * bytes_per_pixel), 0);
-  return true;
+  return false;
 }
 
 void DesktopCapture::MarkDeviceLost(const wchar_t* context, HRESULT hr) {

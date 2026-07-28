@@ -30,7 +30,7 @@ struct VisualConstants {
   std::uint32_t render_shadow = 0;
   float animation_progress = 0.0f;
   std::uint32_t has_per_pixel_alpha = 0;
-  float padding = 0.0f;
+  std::uint32_t texture_rotation = 0;
 };
 
 }  // namespace
@@ -219,6 +219,7 @@ bool OverlayRenderer::UpdateVisualConstants(const WindowVisualMetadata& metadata
       .render_shadow = render_shadow ? 1U : 0U,
       .animation_progress = std::clamp(progress, 0.0f, 1.0f),
       .has_per_pixel_alpha = metadata.has_per_pixel_alpha ? 1U : 0U,
+      .texture_rotation = static_cast<std::uint32_t>(metadata.texture_rotation),
   };
   D3D11_MAPPED_SUBRESOURCE mapped{};
   const HRESULT result = device_->context()->Map(visual_constant_buffer_.Get(), 0,

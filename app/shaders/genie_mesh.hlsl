@@ -13,7 +13,7 @@ cbuffer VisualConstants : register(b2) {
   uint render_shadow;
   float animation_progress;
   uint has_per_pixel_alpha;
-  float visual_padding;
+  uint texture_rotation;
 };
 
 struct VertexInput {
@@ -205,6 +205,13 @@ float shape_alpha(float2 texcoord) {
   return mask_texture.Sample(mask_sampler, texcoord).r;
 }
 
+float2 source_texcoord(float2 texcoord) {
+  if (texture_rotation == 1) return float2(texcoord.y, 1.0f - texcoord.x);
+  if (texture_rotation == 2) return 1.0f - texcoord;
+  if (texture_rotation == 3) return float2(1.0f - texcoord.y, texcoord.x);
+  return texcoord;
+}
+
 float4 PixelMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
   if (render_shadow != 0) {
     float remaining = 1.0f - saturate(animation_progress);
@@ -225,7 +232,7 @@ float4 PixelMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : S
     alpha *= shadow_opacity * pow(remaining, 1.35f);
     return float4(0.0f, 0.0f, 0.0f, alpha);
   }
-  float4 color = source_texture.Sample(linear_sampler, texcoord);
+  float4 color = source_texture.Sample(linear_sampler, source_texcoord(texcoord));
   float mask_alpha = mask_texture.Sample(mask_sampler, texcoord).r;
   if (has_per_pixel_alpha != 0) {
     float shape_factor = color.a > 0.0001f ? saturate(mask_alpha / color.a) : 0.0f;
