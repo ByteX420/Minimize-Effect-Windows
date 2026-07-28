@@ -7,6 +7,7 @@
 #include <functional>
 #include <windows.h>
 #include <wrl/client.h>
+#include <wil/com.h>
 
 #include "animation/easing.hpp"
 #include "animation/minimize_mesh.hpp"
@@ -100,9 +101,9 @@ private:
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> render_target_view_;
-  Microsoft::WRL::ComPtr<IDCompositionDevice> composition_device_;
-  Microsoft::WRL::ComPtr<IDCompositionTarget> composition_target_;
-  Microsoft::WRL::ComPtr<IDCompositionVisual> composition_visual_;
+  wil::com_ptr<IDCompositionDevice> composition_device_;
+  wil::com_ptr<IDCompositionTarget> composition_target_;
+  wil::com_ptr<IDCompositionVisual> composition_visual_;
   AnimationRenderer animation_renderer_;
   OverlayRenderer overlay_renderer_;
   MinimizeCallback minimize_callback_;

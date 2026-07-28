@@ -128,9 +128,9 @@ void OverlayWindow::Shutdown() {
     target_indicator_window_ = nullptr;
   }
   render_target_view_.Reset();
-  composition_visual_.Reset();
-  composition_target_.Reset();
-  composition_device_.Reset();
+  composition_visual_.reset();
+  composition_target_.reset();
+  composition_device_.reset();
   swap_chain_.Reset();
   d3d_device_ = nullptr;
 }
@@ -419,19 +419,20 @@ bool OverlayWindow::InitializeComposition() {
     return false;
   }
 
-  hr = DCompositionCreateDevice(d3d_device_->dxgi_device(), IID_PPV_ARGS(&composition_device_));
+  hr = DCompositionCreateDevice(d3d_device_->dxgi_device(),
+                                IID_PPV_ARGS(composition_device_.put()));
   if (FAILED(hr)) {
     std::wcerr << L"DCompositionCreateDevice failed: 0x" << std::hex << hr << L"\n";
     return false;
   }
 
-  hr = composition_device_->CreateTargetForHwnd(window_, TRUE, &composition_target_);
+  hr = composition_device_->CreateTargetForHwnd(window_, TRUE, composition_target_.put());
   if (FAILED(hr)) {
     std::wcerr << L"CreateTargetForHwnd failed: 0x" << std::hex << hr << L"\n";
     return false;
   }
 
-  hr = composition_device_->CreateVisual(&composition_visual_);
+  hr = composition_device_->CreateVisual(composition_visual_.put());
   if (FAILED(hr)) {
     return false;
   }
@@ -439,7 +440,7 @@ bool OverlayWindow::InitializeComposition() {
   if (FAILED(hr)) {
     return false;
   }
-  hr = composition_target_->SetRoot(composition_visual_.Get());
+  hr = composition_target_->SetRoot(composition_visual_.get());
   if (FAILED(hr)) {
     return false;
   }
