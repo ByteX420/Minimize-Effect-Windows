@@ -3,6 +3,7 @@
 #include "platform/windows/startup_manager.hpp"
 
 #include <vector>
+#include <wil/registry.h>
 
 namespace minimize::platform::windows {
 namespace {
@@ -27,29 +28,28 @@ std::wstring CurrentExecutablePath() {
 }  // namespace
 
 bool ConfigureRunAtStartup(bool enabled) {
-  HKEY run_key = nullptr;
-  const LSTATUS open_status =
-      RegCreateKeyExW(HKEY_CURRENT_USER, kRunKeyPath, 0, nullptr, 0,
-                      KEY_QUERY_VALUE | KEY_SET_VALUE, nullptr, &run_key, nullptr);
-  if (open_status != ERROR_SUCCESS) return false;
-
-  LSTATUS status = ERROR_SUCCESS;
   if (enabled) {
     const std::wstring executable_path = CurrentExecutablePath();
     if (executable_path.empty() || executable_path.find(L'"') != std::wstring::npos) {
-      RegCloseKey(run_key);
       return false;
     }
     const std::wstring command = L"\"" + executable_path + L"\"";
-    status = RegSetValueExW(run_key, kRunValueName, 0, REG_SZ,
-                            reinterpret_cast<const BYTE*>(command.c_str()),
-                            static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
-  } else {
-    status = RegDeleteValueW(run_key, kRunValueName);
-    if (status == ERROR_FILE_NOT_FOUND) status = ERROR_SUCCESS;
+    wil::unique_hkey run_key;
+    if (FAILED(wil::reg::create_unique_key_nothrow(
+            HKEY_CURRENT_USER, kRunKeyPath, run_key, wil::reg::key_access::readwrite))) {
+      return false;
+    }
+    return SUCCEEDED(
+        wil::reg::set_value_string_nothrow(run_key.get(), kRunValueName, command.c_str()));
   }
-  RegCloseKey(run_key);
-  return status == ERROR_SUCCESS;
+
+  wil::unique_hkey run_key;
+  const HRESULT open_result = wil::reg::open_unique_key_nothrow(
+      HKEY_CURRENT_USER, kRunKeyPath, run_key, wil::reg::key_access::readwrite);
+  if (wil::reg::is_registry_not_found(open_result)) return true;
+  if (FAILED(open_result)) return false;
+  const LSTATUS delete_result = RegDeleteValueW(run_key.get(), kRunValueName);
+  return delete_result == ERROR_SUCCESS || delete_result == ERROR_FILE_NOT_FOUND;
 }
 
 }  // namespace minimize::platform::windows
