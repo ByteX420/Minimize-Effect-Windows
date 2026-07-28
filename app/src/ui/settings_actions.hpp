@@ -43,12 +43,14 @@ public:
   virtual ~SettingsActions() = default;
 
   virtual bool SetEnabled(bool enabled) = 0;
-  virtual bool SetAnimationDurations(float minimize, float restore, bool save) = 0;
+  virtual bool SetAnimationDurations(float minimize, float restore, float cancel, bool save) = 0;
   virtual bool SetLinkSpeeds(bool linked) = 0;
   virtual bool SetDisableAnimationsFullscreen(bool enabled) = 0;
   virtual bool SetDisableEffectsBatterySaver(bool enabled) = 0;
   virtual bool SetEasing(const std::string& minimize, const std::string& restore) = 0;
   virtual bool SetCustomEasingBezier(bool minimize, animation::CubicBezier bezier, bool save) = 0;
+  virtual bool SetCancelEasing(const std::string& easing) = 0;
+  virtual bool SetCancelCustomBezier(animation::CubicBezier bezier, bool save) = 0;
   virtual bool SetAnimationStyle(const std::string& style) = 0;
   virtual bool SetQualityMode(const std::string& mode) = 0;
   virtual bool SetMinimizeStrength(float strength, bool save) = 0;

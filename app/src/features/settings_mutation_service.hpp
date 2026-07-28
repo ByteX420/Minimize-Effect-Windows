@@ -13,12 +13,14 @@ public:
   explicit SettingsMutationService(settings::SettingsService& settings) : settings_(settings) {}
 
   bool SetEnabled(bool enabled, const std::function<void()>& applied);
-  bool SetAnimationDurations(float minimize, float restore, bool save);
+  bool SetAnimationDurations(float minimize, float restore, float cancel, bool save);
   bool SetLinkSpeeds(bool linked);
   bool SetDisableAnimationsFullscreen(bool enabled, const std::function<void()>& applied);
   bool SetDisableEffectsBatterySaver(bool enabled, const std::function<void()>& applied);
   bool SetEasing(const std::string& minimize, const std::string& restore);
   bool SetCustomEasingBezier(bool minimize, animation::CubicBezier bezier, bool save);
+  bool SetCancelEasing(const std::string& easing);
+  bool SetCancelCustomBezier(animation::CubicBezier bezier, bool save);
   bool SetAnimationStyle(const std::string& style);
   bool SetQualityMode(const std::string& mode);
   bool SetMinimizeStrength(float strength, bool save);

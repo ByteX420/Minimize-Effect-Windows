@@ -40,6 +40,9 @@ float AnimationConfiguration::Apply(rendering::OverlayWindow& overlay, const REC
       animation::EasingCurveFromName(restoring ? settings.restore_easing
                                                : settings.minimize_easing),
       restoring ? settings.restore_custom_bezier : settings.minimize_custom_bezier);
+  overlay.SetReversalAnimation(settings.cancel_duration,
+                               animation::EasingCurveFromName(settings.cancel_easing),
+                               settings.cancel_custom_bezier);
   overlay.SetAnimationStyle(AnimationStyleFromName(settings.animation_style));
   overlay.SetMeshSegmentCount(policy_.SelectMeshSegmentCount(source.right - source.left,
                                                              source.bottom - source.top, pressure));

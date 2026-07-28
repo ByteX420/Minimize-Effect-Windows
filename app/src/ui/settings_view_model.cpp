@@ -8,13 +8,16 @@ void SettingsViewModel::Apply(const settings::AppSettings& settings) {
   enabled = settings.enabled;
   minimize_duration = settings.minimize_duration;
   restore_duration = settings.restore_duration;
+  cancel_duration = settings.cancel_duration;
   link_speeds = settings.link_speeds;
   disable_animations_fullscreen = settings.disable_animations_fullscreen;
   disable_effects_battery_saver = settings.disable_effects_battery_saver;
   minimize_easing = settings.minimize_easing;
   restore_easing = settings.restore_easing;
+  cancel_easing = settings.cancel_easing;
   minimize_custom_bezier = settings.minimize_custom_bezier;
   restore_custom_bezier = settings.restore_custom_bezier;
+  cancel_custom_bezier = settings.cancel_custom_bezier;
   animation_style = settings.animation_style;
   quality_mode = settings.quality_mode;
   minimize_strength = settings.minimize_strength;

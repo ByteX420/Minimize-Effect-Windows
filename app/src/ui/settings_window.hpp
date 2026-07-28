@@ -105,8 +105,10 @@ private:
   std::string diagnostics_feedback_;
   bool minimize_bezier_dirty_ = false;
   bool restore_bezier_dirty_ = false;
+  bool cancel_bezier_dirty_ = false;
   bool minimize_bezier_active_ = false;
   bool restore_bezier_active_ = false;
+  bool cancel_bezier_active_ = false;
   bool strength_slider_active_ = false;
   bool strength_slider_dirty_ = false;
   std::array<char, 260> exclusion_input_{};
@@ -127,6 +129,8 @@ private:
   bool minimize_slider_dirty_ = false;
   bool restore_slider_active_ = false;
   bool restore_slider_dirty_ = false;
+  bool cancel_slider_active_ = false;
+  bool cancel_slider_dirty_ = false;
   ui::AnimationPreview animation_preview_;
   ui::ApplicationListProvider application_list_provider_;
   ui::TrayIcon tray_icon_;

@@ -3,6 +3,7 @@
 #include "rendering/animation_renderer.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 namespace minimize::rendering {
 
@@ -10,6 +11,14 @@ void AnimationRenderer::SetEasing(animation::EasingCurve easing, animation::Cubi
   configured_easing_ = easing;
   configured_custom_bezier_ = custom;
   configured_custom_bezier_.ClampHandles();
+}
+
+void AnimationRenderer::SetReversalAnimation(float seconds, animation::EasingCurve easing,
+                                             animation::CubicBezier custom) {
+  configured_reversal_duration_seconds_ = seconds;
+  configured_reversal_easing_ = easing;
+  configured_reversal_custom_bezier_ = custom;
+  configured_reversal_custom_bezier_.ClampHandles();
 }
 
 bool AnimationRenderer::Begin(CapturedTexture texture, const animation::RectF& source,
@@ -30,6 +39,9 @@ bool AnimationRenderer::Begin(CapturedTexture texture, const animation::RectF& s
   style_ = configured_style_;
   minimize_strength_ = configured_minimize_strength_;
   fade_strength_ = configured_fade_strength_;
+  reversal_segment_active_ = false;
+  reversal_start_progress_ = progress_;
+  reversal_start_rendered_progress_ = animation::ApplyEasing(easing_, progress_, custom_bezier_);
   return true;
 }
 
@@ -40,14 +52,22 @@ void AnimationRenderer::StartClock() {
 }
 
 void AnimationRenderer::ContinueMinimize() {
-  if (!active_) return;
-  target_progress_ = 1.0f;
-  StartClock();
+  BeginReversal(1.0f, true);
 }
 
 void AnimationRenderer::Reverse(bool start_clock) {
+  BeginReversal(0.0f, start_clock);
+}
+
+void AnimationRenderer::BeginReversal(float target_progress, bool start_clock) {
   if (!active_) return;
-  target_progress_ = 0.0f;
+  reversal_start_rendered_progress_ = eased_progress();
+  reversal_start_progress_ = progress_;
+  target_progress_ = std::clamp(target_progress, 0.0f, 1.0f);
+  duration_seconds_ = std::max(0.001f, configured_reversal_duration_seconds_);
+  easing_ = configured_reversal_easing_;
+  custom_bezier_ = configured_reversal_custom_bezier_;
+  reversal_segment_active_ = true;
   clock_started_ = false;
   if (start_clock) StartClock();
 }
@@ -90,6 +110,15 @@ void AnimationRenderer::FinishRestore() {
 }
 
 float AnimationRenderer::eased_progress() const {
+  if (reversal_segment_active_) {
+    const float distance = std::abs(target_progress_ - reversal_start_progress_);
+    const float travelled = std::abs(progress_ - reversal_start_progress_);
+    const float segment_progress =
+        distance > 0.000001f ? std::clamp(travelled / distance, 0.0f, 1.0f) : 1.0f;
+    const float eased_segment =
+        animation::ApplyEasing(easing_, segment_progress, custom_bezier_);
+    return std::lerp(reversal_start_rendered_progress_, target_progress_, eased_segment);
+  }
   return animation::ApplyEasing(easing_, progress_, custom_bezier_);
 }
 

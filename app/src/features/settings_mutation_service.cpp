@@ -29,10 +29,12 @@ bool SettingsMutationService::SetEnabled(bool enabled, const std::function<void(
   return true;
 }
 
-bool SettingsMutationService::SetAnimationDurations(float minimize, float restore, bool save) {
+bool SettingsMutationService::SetAnimationDurations(float minimize, float restore, float cancel,
+                                                    bool save) {
   auto proposed = settings_.Get();
   proposed.minimize_duration = std::clamp(minimize, 0.10f, 2.00f);
   proposed.restore_duration = std::clamp(restore, 0.10f, 2.00f);
+  proposed.cancel_duration = std::clamp(cancel, 0.10f, 2.00f);
   const bool succeeded = !save || settings_.Update(proposed);
   if (!save) settings_.Preview(std::move(proposed));
   if (!succeeded) core::LogDebug(L"Settings", L"Failed to persist animation durations");
@@ -94,6 +96,29 @@ bool SettingsMutationService::SetCustomEasingBezier(bool minimize, animation::Cu
   return settings_.Update(std::move(proposed));
 }
 
+bool SettingsMutationService::SetCancelEasing(const std::string& easing) {
+  constexpr std::array names = {
+      std::string_view{"Linear"},      std::string_view{"Ease In"}, std::string_view{"Ease Out"},
+      std::string_view{"Ease In Out"}, std::string_view{"Cubic"},   std::string_view{"Back"},
+      std::string_view{"Elastic"},     std::string_view{"Custom"},
+  };
+  if (std::find(names.begin(), names.end(), easing) == names.end()) return false;
+  auto proposed = settings_.Get();
+  proposed.cancel_easing = easing;
+  return settings_.Update(std::move(proposed));
+}
+
+bool SettingsMutationService::SetCancelCustomBezier(animation::CubicBezier bezier, bool save) {
+  bezier.ClampHandles();
+  auto proposed = settings_.Get();
+  proposed.cancel_custom_bezier = bezier;
+  if (!save) {
+    settings_.Preview(std::move(proposed));
+    return true;
+  }
+  return settings_.Update(std::move(proposed));
+}
+
 bool SettingsMutationService::SetAnimationStyle(const std::string& style) {
   if (style != "Genie classic" && style != "Genie curvy" && style != "Squash") return false;
   auto proposed = settings_.Get();
@@ -130,11 +155,14 @@ bool SettingsMutationService::ResetMotionSettings() {
   auto proposed = settings_.Get();
   proposed.minimize_duration = defaults.minimize_duration;
   proposed.restore_duration = defaults.restore_duration;
+  proposed.cancel_duration = defaults.cancel_duration;
   proposed.link_speeds = defaults.link_speeds;
   proposed.minimize_easing = defaults.minimize_easing;
   proposed.restore_easing = defaults.restore_easing;
+  proposed.cancel_easing = defaults.cancel_easing;
   proposed.minimize_custom_bezier = defaults.minimize_custom_bezier;
   proposed.restore_custom_bezier = defaults.restore_custom_bezier;
+  proposed.cancel_custom_bezier = defaults.cancel_custom_bezier;
   proposed.animation_style = defaults.animation_style;
   proposed.quality_mode = defaults.quality_mode;
   proposed.minimize_strength = defaults.minimize_strength;

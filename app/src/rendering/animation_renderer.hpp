@@ -18,6 +18,8 @@ public:
 
   void SetDuration(float seconds) { configured_duration_seconds_ = seconds; }
   void SetEasing(animation::EasingCurve easing, animation::CubicBezier custom);
+  void SetReversalAnimation(float seconds, animation::EasingCurve easing,
+                            animation::CubicBezier custom);
   void SetStyle(animation::AnimationStyle style) { configured_style_ = style; }
   void SetMeshSegmentCount(int count) { (void)count; }
   void SetMinimizeStrength(float strength) { configured_minimize_strength_ = strength; }
@@ -58,6 +60,8 @@ public:
   }
 
 private:
+  void BeginReversal(float target_progress, bool start_clock);
+
   bool active_ = false;
   bool clock_started_ = false;
   CapturedTexture texture_;
@@ -73,10 +77,17 @@ private:
   animation::AnimationStyle style_ = animation::AnimationStyle::kClassic;
   float minimize_strength_ = 1.0f;
   float fade_strength_ = 0.0f;
+  bool reversal_segment_active_ = false;
+  float reversal_start_progress_ = 0.0f;
+  float reversal_start_rendered_progress_ = 0.0f;
 
   float configured_duration_seconds_ = 0.70f;
   animation::EasingCurve configured_easing_ = animation::EasingCurve::kLinear;
   animation::CubicBezier configured_custom_bezier_ = animation::CubicBezier::EaseInOut();
+  float configured_reversal_duration_seconds_ = 0.35f;
+  animation::EasingCurve configured_reversal_easing_ = animation::EasingCurve::kLinear;
+  animation::CubicBezier configured_reversal_custom_bezier_ =
+      animation::CubicBezier::EaseInOut();
   animation::AnimationStyle configured_style_ = animation::AnimationStyle::kClassic;
   float configured_minimize_strength_ = 1.0f;
   float configured_fade_strength_ = 0.0f;

@@ -39,6 +39,10 @@ public:
                           minimize::animation::CubicBezier custom = {}) {
     animation_renderer_.SetEasing(easing, custom);
   }
+  void SetReversalAnimation(float duration_seconds, minimize::animation::EasingCurve easing,
+                            minimize::animation::CubicBezier custom = {}) {
+    animation_renderer_.SetReversalAnimation(duration_seconds, easing, custom);
+  }
   void SetAnimationStyle(minimize::animation::AnimationStyle style) {
     animation_renderer_.SetStyle(style);
   }

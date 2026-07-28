@@ -24,13 +24,16 @@ public:
   features::DiagnosticsSnapshot diagnostics;
   float minimize_duration = settings::kDefaultMinimizeDuration;
   float restore_duration = settings::kDefaultRestoreDuration;
+  float cancel_duration = settings::kDefaultCancelDuration;
   bool link_speeds = false;
   bool disable_animations_fullscreen = false;
   bool disable_effects_battery_saver = false;
   std::string minimize_easing = "Linear";
   std::string restore_easing = "Linear";
+  std::string cancel_easing = "Linear";
   animation::CubicBezier minimize_custom_bezier = animation::CubicBezier::EaseInOut();
   animation::CubicBezier restore_custom_bezier = animation::CubicBezier::EaseInOut();
+  animation::CubicBezier cancel_custom_bezier = animation::CubicBezier::EaseInOut();
   std::string animation_style = "Genie classic";
   std::string quality_mode = "automatic";
   float minimize_strength = 1.0f;

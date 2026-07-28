@@ -61,12 +61,15 @@ public:
   void CleanupAndRestoreAll();
   void HealLeftoverWindows();
   bool SetEnabled(bool enabled) override;
-  bool SetAnimationDurations(float minimize_duration, float restore_duration, bool save) override;
+  bool SetAnimationDurations(float minimize_duration, float restore_duration, float cancel_duration,
+                             bool save) override;
   bool SetLinkSpeeds(bool linked) override;
   bool SetDisableAnimationsFullscreen(bool enabled) override;
   bool SetDisableEffectsBatterySaver(bool enabled) override;
   bool SetEasing(const std::string& minimize_easing, const std::string& restore_easing) override;
   bool SetCustomEasingBezier(bool is_minimize, animation::CubicBezier bezier, bool save) override;
+  bool SetCancelEasing(const std::string& easing) override;
+  bool SetCancelCustomBezier(animation::CubicBezier bezier, bool save) override;
   bool SetAnimationStyle(const std::string& style) override;
   bool SetQualityMode(const std::string& mode) override;
   bool SetMinimizeStrength(float strength, bool save) override;

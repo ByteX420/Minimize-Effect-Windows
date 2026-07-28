@@ -110,13 +110,20 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
                   return std::isfinite(value) && value >= kMinimumDuration &&
                          value <= kMaximumDuration;
                 });
+  ReadIf<float>(document, "cancelDuration", loaded.cancel_duration,
+                [](float value) {
+                  return std::isfinite(value) && value >= kMinimumDuration &&
+                         value <= kMaximumDuration;
+                });
   ReadIf(document, "linkSpeeds", loaded.link_speeds);
   ReadIf(document, "disableAnimationsFullscreen", loaded.disable_animations_fullscreen);
   ReadIf(document, "disableEffectsBatterySaver", loaded.disable_effects_battery_saver);
   ReadIf<std::string>(document, "minimizeEasing", loaded.minimize_easing, IsValidEasingName);
   ReadIf<std::string>(document, "restoreEasing", loaded.restore_easing, IsValidEasingName);
+  ReadIf<std::string>(document, "cancelEasing", loaded.cancel_easing, IsValidEasingName);
   ReadBezier(document, "minimizeCustomBezier", loaded.minimize_custom_bezier);
   ReadBezier(document, "restoreCustomBezier", loaded.restore_custom_bezier);
+  ReadBezier(document, "cancelCustomBezier", loaded.cancel_custom_bezier);
   ReadIf<std::string>(document, "animationStyle", loaded.animation_style, IsValidAnimationStyle);
   ReadIf<std::string>(
       document, "qualityMode", loaded.quality_mode,
@@ -147,6 +154,7 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
   if (loaded.animation_style == "Classic Minimize") loaded.animation_style = "Genie classic";
   loaded.minimize_custom_bezier.ClampHandles();
   loaded.restore_custom_bezier.ClampHandles();
+  loaded.cancel_custom_bezier.ClampHandles();
   return loaded;
 }
 
@@ -158,17 +166,22 @@ std::string SettingsSerializer::Serialize(const AppSettings& settings) {
       {"enabled", settings.enabled},
       {"minimizeDuration", settings.minimize_duration},
       {"restoreDuration", settings.restore_duration},
+      {"cancelDuration", settings.cancel_duration},
       {"linkSpeeds", settings.link_speeds},
       {"disableAnimationsFullscreen", settings.disable_animations_fullscreen},
       {"disableEffectsBatterySaver", settings.disable_effects_battery_saver},
       {"minimizeEasing", settings.minimize_easing},
       {"restoreEasing", settings.restore_easing},
+      {"cancelEasing", settings.cancel_easing},
       {"minimizeCustomBezier",
        {settings.minimize_custom_bezier.x1, settings.minimize_custom_bezier.y1,
         settings.minimize_custom_bezier.x2, settings.minimize_custom_bezier.y2}},
       {"restoreCustomBezier",
        {settings.restore_custom_bezier.x1, settings.restore_custom_bezier.y1,
         settings.restore_custom_bezier.x2, settings.restore_custom_bezier.y2}},
+      {"cancelCustomBezier",
+       {settings.cancel_custom_bezier.x1, settings.cancel_custom_bezier.y1,
+        settings.cancel_custom_bezier.x2, settings.cancel_custom_bezier.y2}},
       {"animationStyle", settings.animation_style},
       {"qualityMode", settings.quality_mode},
       {"minimizeStrength", settings.minimize_strength},

@@ -11,18 +11,22 @@ namespace minimize::settings {
 
 inline constexpr float kDefaultMinimizeDuration = 0.70f;
 inline constexpr float kDefaultRestoreDuration = 0.70f;
+inline constexpr float kDefaultCancelDuration = 0.35f;
 
 struct AppSettings {
   bool enabled = true;
   float minimize_duration = kDefaultMinimizeDuration;
   float restore_duration = kDefaultRestoreDuration;
+  float cancel_duration = kDefaultCancelDuration;
   bool link_speeds = false;
   bool disable_animations_fullscreen = false;
   bool disable_effects_battery_saver = false;
   std::string minimize_easing = "Ease In Out";
   std::string restore_easing = "Ease In Out";
+  std::string cancel_easing = "Linear";
   animation::CubicBezier minimize_custom_bezier = animation::CubicBezier::EaseInOut();
   animation::CubicBezier restore_custom_bezier = animation::CubicBezier::EaseInOut();
+  animation::CubicBezier cancel_custom_bezier = animation::CubicBezier::EaseInOut();
   std::string animation_style = "Genie classic";
   std::string quality_mode = "automatic";
   float minimize_strength = 1.0f;

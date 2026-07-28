@@ -383,9 +383,9 @@ bool ApplicationRuntime::ExecuteDiagnosticsAction(features::DiagnosticsAction ac
 }
 
 bool ApplicationRuntime::SetAnimationDurations(float minimize_duration, float restore_duration,
-                                               bool save) {
-  const bool result =
-      settings_mutations_.SetAnimationDurations(minimize_duration, restore_duration, save);
+                                               float cancel_duration, bool save) {
+  const bool result = settings_mutations_.SetAnimationDurations(
+      minimize_duration, restore_duration, cancel_duration, save);
   settings_window_.UpdateState(settings_service_.Get());
   return result;
 }
@@ -424,6 +424,18 @@ bool ApplicationRuntime::SetEasing(const std::string& minimize_easing,
 bool ApplicationRuntime::SetCustomEasingBezier(bool is_minimize, animation::CubicBezier bezier,
                                                bool save) {
   const bool result = settings_mutations_.SetCustomEasingBezier(is_minimize, bezier, save);
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+bool ApplicationRuntime::SetCancelEasing(const std::string& easing) {
+  const bool result = settings_mutations_.SetCancelEasing(easing);
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+bool ApplicationRuntime::SetCancelCustomBezier(animation::CubicBezier bezier, bool save) {
+  const bool result = settings_mutations_.SetCancelCustomBezier(bezier, save);
   settings_window_.UpdateState(settings_service_.Get());
   return result;
 }

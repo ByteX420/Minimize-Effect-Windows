@@ -77,9 +77,11 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     const bool ok = actions.ResetMotionSettings();
     window.minimize_slider_dirty_ = false;
     window.restore_slider_dirty_ = false;
+    window.cancel_slider_dirty_ = false;
     window.strength_slider_dirty_ = false;
     window.minimize_bezier_dirty_ = false;
     window.restore_bezier_dirty_ = false;
+    window.cancel_bezier_dirty_ = false;
     // Snap slider fills to defaults after UpdateState reloads the model.
     motion.system.Set(ui::motion::MotionKey("menu.slider", "##min_duration", "fill"),
                       std::clamp((model.minimize_duration - kMinimumDuration) /
@@ -87,6 +89,10 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
                                  0.0f, 1.0f));
     motion.system.Set(ui::motion::MotionKey("menu.slider", "##restore_duration", "fill"),
                       std::clamp((model.restore_duration - kMinimumDuration) /
+                                     (kMaximumDuration - kMinimumDuration),
+                                 0.0f, 1.0f));
+    motion.system.Set(ui::motion::MotionKey("menu.slider", "##cancel_duration", "fill"),
+                      std::clamp((model.cancel_duration - kMinimumDuration) /
                                      (kMaximumDuration - kMinimumDuration),
                                  0.0f, 1.0f));
     motion.system.Set(ui::motion::MotionKey("menu.slider", "##minimize_strength", "fill"),
@@ -122,14 +128,15 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
       window.minimize_slider_dirty_ = false;
       window.restore_slider_dirty_ = false;
       window.RecordSaveResult(
-          actions.SetAnimationDurations(model.minimize_duration, model.restore_duration, true));
+          actions.SetAnimationDurations(model.minimize_duration, model.restore_duration,
+                                        model.cancel_duration, true));
     }
     preset_x += preset_width + preset_gap;
   }
   layout.EndRow();
 
   const auto duration_slider = [&](const char* id, const char* title, float* duration,
-                                   bool* was_active, bool* dirty, bool minimize) {
+                                   bool* was_active, bool* dirty) {
     layout.BeginRow(Metrics::kRowHeight);
     const float width = layout.ControlMaxWidth(340.0f);
     layout.ReserveControl(width);
@@ -142,17 +149,28 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     if (active && std::abs(proposed - *duration) > 0.0001f) {
       float delta = proposed - *duration;
       if (model.link_speeds) {
-        float* other = minimize ? &model.restore_duration : &model.minimize_duration;
-        delta = std::clamp(delta, kMinimumDuration - *other, kMaximumDuration - *other);
-        *other += delta;
+        const float minimum_delta =
+            (std::max)({kMinimumDuration - model.minimize_duration,
+                        kMinimumDuration - model.restore_duration,
+                        kMinimumDuration - model.cancel_duration});
+        const float maximum_delta =
+            (std::min)({kMaximumDuration - model.minimize_duration,
+                        kMaximumDuration - model.restore_duration,
+                        kMaximumDuration - model.cancel_duration});
+        delta = std::clamp(delta, minimum_delta, maximum_delta);
+        model.minimize_duration += delta;
+        model.restore_duration += delta;
+        model.cancel_duration += delta;
+      } else {
+        *duration += delta;
       }
-      *duration += delta;
       *dirty = true;
-      actions.SetAnimationDurations(model.minimize_duration, model.restore_duration, false);
+      actions.SetAnimationDurations(model.minimize_duration, model.restore_duration,
+                                    model.cancel_duration, false);
     }
     if (*was_active && !active && *dirty) {
-      const bool saved =
-          actions.SetAnimationDurations(model.minimize_duration, model.restore_duration, true);
+      const bool saved = actions.SetAnimationDurations(
+          model.minimize_duration, model.restore_duration, model.cancel_duration, true);
       window.RecordSaveResult(saved);
       if (saved) *dirty = false;
     }
@@ -160,17 +178,60 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     layout.EndRow();
   };
   duration_slider("##min_duration", "Minimize", &model.minimize_duration,
-                  &window.minimize_slider_active_, &window.minimize_slider_dirty_, true);
+                  &window.minimize_slider_active_, &window.minimize_slider_dirty_);
   duration_slider("##restore_duration", "Restore", &model.restore_duration,
-                  &window.restore_slider_active_, &window.restore_slider_dirty_, false);
+                  &window.restore_slider_active_, &window.restore_slider_dirty_);
+
+  layout.BeginRow(Metrics::kRowHeightTall);
+  const float cancel_width = layout.ControlMaxWidth(340.0f);
+  layout.ReserveControl(cancel_width);
+  layout.RowTitle(window.font_body_, kLabelTextSize, "Cancel / reverse", kPrimaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize, "Used when direction changes mid-animation",
+                     kSecondaryTextColor);
+  ImVec2 cursor = layout.ControlCursor(cancel_width, slider_height);
+  layout.SetCursor(cursor.x, cursor.y);
+  float cancel_duration = model.cancel_duration;
+  const bool cancel_active =
+      Slider(motion, "##cancel_duration", "", &cancel_duration, kMinimumDuration, kMaximumDuration,
+             cancel_width, scale, alpha, window.font_small_, 0.01f);
+  if (cancel_active && std::abs(cancel_duration - model.cancel_duration) > 0.0001f) {
+    float delta = cancel_duration - model.cancel_duration;
+    if (model.link_speeds) {
+      const float minimum_delta =
+          (std::max)({kMinimumDuration - model.minimize_duration,
+                      kMinimumDuration - model.restore_duration,
+                      kMinimumDuration - model.cancel_duration});
+      const float maximum_delta =
+          (std::min)({kMaximumDuration - model.minimize_duration,
+                      kMaximumDuration - model.restore_duration,
+                      kMaximumDuration - model.cancel_duration});
+      delta = std::clamp(delta, minimum_delta, maximum_delta);
+      model.minimize_duration += delta;
+      model.restore_duration += delta;
+      model.cancel_duration += delta;
+    } else {
+      model.cancel_duration += delta;
+    }
+    window.cancel_slider_dirty_ = true;
+    actions.SetAnimationDurations(model.minimize_duration, model.restore_duration,
+                                  model.cancel_duration, false);
+  }
+  if (window.cancel_slider_active_ && !cancel_active && window.cancel_slider_dirty_) {
+    const bool saved = actions.SetAnimationDurations(
+        model.minimize_duration, model.restore_duration, model.cancel_duration, true);
+    window.RecordSaveResult(saved);
+    if (saved) window.cancel_slider_dirty_ = false;
+  }
+  window.cancel_slider_active_ = cancel_active;
+  layout.EndRow();
 
   layout.BeginRow(Metrics::kRowHeightTall);
   layout.ReserveControl(toggle_width);
   layout.RowTitle(window.font_body_, kLabelTextSize, "Link durations", kPrimaryTextColor);
-  layout.RowSubtitle(window.font_small_, kHelperTextSize, "Move both sliders together",
+  layout.RowSubtitle(window.font_small_, kHelperTextSize, "Move all three sliders together",
                      kSecondaryTextColor);
   bool link_speeds = model.link_speeds;
-  ImVec2 cursor = layout.ControlCursor(toggle_width, toggle_height);
+  cursor = layout.ControlCursor(toggle_width, toggle_height);
   layout.SetCursor(cursor.x, cursor.y);
   if (Toggle(motion, "##link_speeds", &link_speeds, scale, alpha)) {
     const bool previous = model.link_speeds;
@@ -257,6 +318,40 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
   easing_block("##restore_easing", "##restore_bezier_graph", "Restore easing",
                &model.restore_easing, &model.restore_custom_bezier, &window.restore_bezier_dirty_,
                false);
+
+  int cancel_easing_index = SelectedIndex(easing_names, model.cancel_easing);
+  combo_row("##cancel_easing", "Cancel / reverse easing", &cancel_easing_index, easing_names, [&] {
+    const std::string previous = model.cancel_easing;
+    model.cancel_easing = easing_names[cancel_easing_index];
+    const bool saved = actions.SetCancelEasing(model.cancel_easing);
+    if (!saved) model.cancel_easing = previous;
+    window.RecordSaveResult(saved);
+  });
+  if (model.cancel_easing == "Custom") {
+    layout.BeginStackRow(0.0f, graph_height / scale + 8.0f);
+    layout.SetCursor(layout.content_right() - graph_side,
+                     layout.StackControlY() + (layout.StackControlHeight() - graph_height) * 0.5f);
+    bool changed = false;
+    const bool active =
+        EasingGraphEditor(motion, "##cancel_bezier_graph", &model.cancel_custom_bezier,
+                          ImVec2(graph_side, graph_height), scale, alpha, &changed,
+                          window.font_small_);
+    DelayedTooltip(
+        "Cancel curve used after reversing direction. Drag handles or type x1, y1, x2, y2.",
+        scale);
+    if (changed) {
+      window.cancel_bezier_dirty_ = true;
+      actions.SetCancelCustomBezier(model.cancel_custom_bezier, false);
+      window.ForceRender();
+    }
+    if (window.cancel_bezier_active_ && !active && window.cancel_bezier_dirty_) {
+      const bool saved = actions.SetCancelCustomBezier(model.cancel_custom_bezier, true);
+      window.RecordSaveResult(saved);
+      if (saved) window.cancel_bezier_dirty_ = false;
+    }
+    window.cancel_bezier_active_ = active;
+    layout.EndRow();
+  }
   layout.EndGroup();
 
   layout.SectionCaption(window.font_small_, kCaptionTextSize, "LOOK");

@@ -162,16 +162,19 @@ void SettingsWindow::UpdateState(const minimize::settings::AppSettings& settings
       enabled_changed ||
       std::abs(controller_->view_model().minimize_duration - settings.minimize_duration) >
           0.0001f ||
-      std::abs(controller_->view_model().restore_duration - settings.restore_duration) > 0.0001f ||
+       std::abs(controller_->view_model().restore_duration - settings.restore_duration) > 0.0001f ||
+       std::abs(controller_->view_model().cancel_duration - settings.cancel_duration) > 0.0001f ||
       controller_->view_model().link_speeds != settings.link_speeds ||
       controller_->view_model().disable_animations_fullscreen !=
           settings.disable_animations_fullscreen ||
       controller_->view_model().disable_effects_battery_saver !=
           settings.disable_effects_battery_saver ||
-      controller_->view_model().minimize_easing != settings.minimize_easing ||
-      controller_->view_model().restore_easing != settings.restore_easing ||
-      controller_->view_model().minimize_custom_bezier != settings.minimize_custom_bezier ||
-      controller_->view_model().restore_custom_bezier != settings.restore_custom_bezier ||
+       controller_->view_model().minimize_easing != settings.minimize_easing ||
+       controller_->view_model().restore_easing != settings.restore_easing ||
+       controller_->view_model().cancel_easing != settings.cancel_easing ||
+       controller_->view_model().minimize_custom_bezier != settings.minimize_custom_bezier ||
+       controller_->view_model().restore_custom_bezier != settings.restore_custom_bezier ||
+       controller_->view_model().cancel_custom_bezier != settings.cancel_custom_bezier ||
       controller_->view_model().animation_style != settings.animation_style ||
       controller_->view_model().quality_mode != settings.quality_mode ||
       std::abs(controller_->view_model().minimize_strength - settings.minimize_strength) > 0.0001f ||
@@ -208,16 +211,19 @@ void SettingsWindow::SetHotkeyRegistrationStatus(minimize::settings::HotkeyActio
 
 void SettingsWindow::FlushPendingSpeedSave() {
   const bool speeds_pending = minimize_slider_dirty_ || restore_slider_dirty_ ||
-                              minimize_slider_active_ || restore_slider_active_;
+                              cancel_slider_dirty_ || minimize_slider_active_ ||
+                              restore_slider_active_ || cancel_slider_active_;
   if (speeds_pending) {
     const bool saved =
         controller_ == nullptr || controller_->actions().SetAnimationDurations(
-                                      controller_->view_model().minimize_duration,
-                                      controller_->view_model().restore_duration, true);
+                                       controller_->view_model().minimize_duration,
+                                       controller_->view_model().restore_duration,
+                                       controller_->view_model().cancel_duration, true);
     RecordSaveResult(saved);
     if (saved) {
       minimize_slider_dirty_ = false;
       restore_slider_dirty_ = false;
+      cancel_slider_dirty_ = false;
     }
   }
   const bool strength_pending = strength_slider_dirty_ || strength_slider_active_;
@@ -230,6 +236,7 @@ void SettingsWindow::FlushPendingSpeedSave() {
   }
   minimize_slider_active_ = false;
   restore_slider_active_ = false;
+  cancel_slider_active_ = false;
   strength_slider_active_ = false;
 }
 

@@ -41,11 +41,14 @@ bool IsValidStyle(std::string_view value) {
 AppSettings SettingsValidator::Normalize(AppSettings settings) {
   settings.minimize_duration = std::clamp(settings.minimize_duration, 0.10f, 2.00f);
   settings.restore_duration = std::clamp(settings.restore_duration, 0.10f, 2.00f);
+  settings.cancel_duration = std::clamp(settings.cancel_duration, 0.10f, 2.00f);
   settings.minimize_strength = std::clamp(settings.minimize_strength, 0.25f, 1.00f);
   if (!IsValidEasing(settings.minimize_easing)) settings.minimize_easing = "Ease In Out";
   if (!IsValidEasing(settings.restore_easing)) settings.restore_easing = "Ease In Out";
+  if (!IsValidEasing(settings.cancel_easing)) settings.cancel_easing = "Linear";
   settings.minimize_custom_bezier.ClampHandles();
   settings.restore_custom_bezier.ClampHandles();
+  settings.cancel_custom_bezier.ClampHandles();
   if (settings.animation_style == "Classic Minimize") {
     settings.animation_style = "Genie classic";
   }
