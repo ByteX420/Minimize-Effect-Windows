@@ -57,7 +57,7 @@
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)vendor_integration;$(ProjectDir);$(ProjectDir)src;$(ProjectDir)third_party;$(ProjectDir)third_party\wil\include;$(ProjectDir)third_party\spdlog\include;$(ProjectDir)third_party\imgui;$(ProjectDir)third_party\imgui\backends;$(ProjectDir)third_party\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IntDir)generated;$(ProjectDir)vendor_integration;$(ProjectDir);$(ProjectDir)src;$(ProjectDir)third_party;$(ProjectDir)third_party\wil\include;$(ProjectDir)third_party\spdlog\include;$(ProjectDir)third_party\imgui;$(ProjectDir)third_party\imgui\backends;$(ProjectDir)third_party\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/FS /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.hpp</PrecompiledHeaderFile>
@@ -65,7 +65,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>$(ProjectDir)third_party\freetype\lib\freetype.lib;d3d11.lib;dxgi.lib;dwmapi.lib;dcomp.lib;d3dcompiler.lib;shell32.lib;ole32.lib;oleaut32.lib;comdlg32.lib;runtimeobject.lib;version.lib;uiautomationcore.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>$(ProjectDir)third_party\freetype\lib\freetype.lib;d3d11.lib;dxgi.lib;dwmapi.lib;dcomp.lib;shell32.lib;ole32.lib;oleaut32.lib;comdlg32.lib;runtimeobject.lib;version.lib;uiautomationcore.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalOptions>/ignore:4099 %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <Manifest>
@@ -365,10 +365,18 @@
     <ResourceCompile Include="MinimizeEffect.rc" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="shaders\compile.ps1" />
     <None Include="shaders\genie_mesh.hlsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
+  <Target Name="CompileRendererShaders"
+          BeforeTargets="ClCompile"
+          Inputs="$(ProjectDir)shaders\genie_mesh.hlsl;$(ProjectDir)shaders\compile.ps1"
+          Outputs="$(IntDir)generated\genie_vertex_shader.hpp;$(IntDir)generated\genie_pixel_shader.hpp">
+    <MakeDir Directories="$(IntDir)generated" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)shaders\compile.ps1&quot; -Source &quot;$(ProjectDir)shaders\genie_mesh.hlsl&quot; -OutputDirectory &quot;$(IntDir)generated&quot;" />
+  </Target>
   <Target Name="BuildMinimizeHook" BeforeTargets="PrepareForBuild"
           Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipMinimizeHookBuild)' != 'true'">
     <MSBuild Projects="$(ProjectDir)..\hook\MinimizeHook.vcxproj"
