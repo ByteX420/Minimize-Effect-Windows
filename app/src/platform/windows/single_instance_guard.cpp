@@ -41,12 +41,12 @@ bool SingleInstanceGuard::ActivateExistingInstance(DWORD timeout_ms) {
 }
 
 SingleInstanceResult SingleInstanceGuard::Acquire() {
-  if (mutex_ != nullptr) return SingleInstanceResult::kPrimary;
+  if (mutex_) return SingleInstanceResult::kPrimary;
   SetLastError(ERROR_SUCCESS);
   const std::wstring mutex_name = MutexName();
-  mutex_ = CreateMutexW(nullptr, TRUE, mutex_name.c_str());
+  mutex_.reset(CreateMutexW(nullptr, TRUE, mutex_name.c_str()));
   error_ = GetLastError();
-  if (mutex_ == nullptr) {
+  if (!mutex_) {
     return error_ == ERROR_ACCESS_DENIED ? SingleInstanceResult::kAlreadyRunning
                                          : SingleInstanceResult::kError;
   }
@@ -59,10 +59,9 @@ SingleInstanceResult SingleInstanceGuard::Acquire() {
 }
 
 void SingleInstanceGuard::Release() {
-  if (mutex_ == nullptr) return;
-  if (owns_mutex_) ReleaseMutex(mutex_);
-  CloseHandle(mutex_);
-  mutex_ = nullptr;
+  if (!mutex_) return;
+  if (owns_mutex_) ReleaseMutex(mutex_.get());
+  mutex_.reset();
   owns_mutex_ = false;
 }
 

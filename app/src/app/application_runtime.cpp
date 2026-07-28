@@ -6,6 +6,7 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <wil/resource.h>
 
 #include "animation/geometry.hpp"
 #include "app/application.hpp"
@@ -49,11 +50,10 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
   // Touch log file and grant permissions so AppContainers can write to it
   {
     const std::wstring& log_path = minimize::core::DebugLogPath();
-    HANDLE file =
-        CreateFileW(log_path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (file != INVALID_HANDLE_VALUE) {
-      CloseHandle(file);
+    wil::unique_hfile file(CreateFileW(log_path.c_str(), FILE_APPEND_DATA,
+                                       FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS,
+                                       FILE_ATTRIBUTE_NORMAL, nullptr));
+    if (file) {
       (void)platform::GrantAppContainerPermissions(log_path);
     }
   }

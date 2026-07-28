@@ -8,6 +8,7 @@
 #include <dwmapi.h>
 #include <iostream>
 #include <sstream>
+#include <wil/resource.h>
 
 #include "core/logger.hpp"
 #include "platform/windows/display_info.hpp"
@@ -374,11 +375,12 @@ void OverlayWindow::ShowTargetIndicator(const minimize::animation::RectF& target
   const int top = static_cast<int>(std::floor(target.top)) - 3;
   const int width = std::max(8, static_cast<int>(std::ceil(target.right - target.left)) + 6);
   const int height = std::max(8, static_cast<int>(std::ceil(target.bottom - target.top)) + 6);
-  HRGN outer = CreateRectRgn(0, 0, width, height);
-  HRGN inner = CreateRectRgn(2, 2, width - 2, height - 2);
-  if (outer != nullptr && inner != nullptr) CombineRgn(outer, outer, inner, RGN_DIFF);
-  if (inner != nullptr) DeleteObject(inner);
-  if (outer != nullptr) SetWindowRgn(target_indicator_window_, outer, TRUE);
+  wil::unique_hrgn outer(CreateRectRgn(0, 0, width, height));
+  wil::unique_hrgn inner(CreateRectRgn(2, 2, width - 2, height - 2));
+  if (outer && inner) CombineRgn(outer.get(), outer.get(), inner.get(), RGN_DIFF);
+  if (outer && SetWindowRgn(target_indicator_window_, outer.get(), TRUE) != 0) {
+    outer.release();
+  }
   SetWindowPos(target_indicator_window_, HWND_TOPMOST, left, top, width, height,
                SWP_NOACTIVATE | SWP_SHOWWINDOW);
   target_indicator_hide_time_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(180);
@@ -489,8 +491,9 @@ bool OverlayWindow::ResizeOverlaySurface(const RECT& screen_rect) {
 }
 
 void OverlayWindow::ApplyVisibleOverlayRegion(HWND taskbar_window) {
-  HRGN visible_region = CreateRectRgn(0, 0, static_cast<int>(width_), static_cast<int>(height_));
-  if (visible_region == nullptr) {
+  wil::unique_hrgn visible_region(
+      CreateRectRgn(0, 0, static_cast<int>(width_), static_cast<int>(height_)));
+  if (!visible_region) {
     return;
   }
 
@@ -499,18 +502,17 @@ void OverlayWindow::ApplyVisibleOverlayRegion(HWND taskbar_window) {
   if (taskbar_window != nullptr && GetWindowRect(taskbar_window, &taskbar_rect) &&
       IntersectRect(&overlap, &overlay_screen_rect_, &taskbar_rect)) {
     OffsetRect(&overlap, -overlay_screen_rect_.left, -overlay_screen_rect_.top);
-    HRGN taskbar_region = CreateRectRgn(overlap.left, overlap.top, overlap.right, overlap.bottom);
-    if (taskbar_region != nullptr) {
-      if (CombineRgn(visible_region, visible_region, taskbar_region, RGN_DIFF) == ERROR) {
-        DeleteObject(taskbar_region);
-        DeleteObject(visible_region);
+    wil::unique_hrgn taskbar_region(
+        CreateRectRgn(overlap.left, overlap.top, overlap.right, overlap.bottom));
+    if (taskbar_region) {
+      if (CombineRgn(visible_region.get(), visible_region.get(), taskbar_region.get(), RGN_DIFF) ==
+          ERROR) {
         return;
       }
-      DeleteObject(taskbar_region);
     }
   }
 
-  (void)minimize::platform::SetOwnedWindowRegion(window_, visible_region, true);
+  (void)minimize::platform::SetOwnedWindowRegion(window_, visible_region.release(), true);
 }
 
 bool OverlayWindow::Render(float progress) {

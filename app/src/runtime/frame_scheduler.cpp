@@ -18,28 +18,25 @@ namespace minimize::runtime {
 FrameScheduler::~FrameScheduler() { Shutdown(); }
 
 void FrameScheduler::Initialize() {
-  if (timer_ != nullptr) return;
-  timer_ = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                                  TIMER_MODIFY_STATE | SYNCHRONIZE);
-  high_resolution_timer_ = timer_ != nullptr;
-  if (timer_ == nullptr) {
-    timer_ = CreateWaitableTimerW(nullptr, FALSE, nullptr);
+  if (timer_) return;
+  timer_.reset(CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                     TIMER_MODIFY_STATE | SYNCHRONIZE));
+  high_resolution_timer_ = static_cast<bool>(timer_);
+  if (!timer_) {
+    timer_.reset(CreateWaitableTimerW(nullptr, FALSE, nullptr));
   }
 }
 
 void FrameScheduler::Shutdown() {
   EndFallbackTimerResolution();
-  if (timer_ != nullptr) {
-    CloseHandle(timer_);
-    timer_ = nullptr;
-  }
+  timer_.reset();
   high_resolution_timer_ = false;
 }
 
 void FrameScheduler::Wake() {
-  if (timer_ == nullptr) return;
+  if (!timer_) return;
   LARGE_INTEGER wake_now{};
-  SetWaitableTimer(timer_, &wake_now, 0, nullptr, nullptr, FALSE);
+  SetWaitableTimer(timer_.get(), &wake_now, 0, nullptr, nullptr, FALSE);
 }
 
 void FrameScheduler::Reset(AnimationRun& run, HWND window, const RECT& animation_bounds) {
@@ -121,13 +118,13 @@ void FrameScheduler::Wait(const AnimationRunPool& runs) {
   const auto now = std::chrono::steady_clock::now();
   if (now >= earliest) return;
   const auto wait_duration = earliest - now;
-  if (timer_ != nullptr) {
+  if (timer_) {
     const auto hundred_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(wait_duration).count() / 100;
     LARGE_INTEGER due_time{};
     due_time.QuadPart = -std::max<std::int64_t>(1, hundred_ns);
-    if (SetWaitableTimerEx(timer_, &due_time, 0, nullptr, nullptr, nullptr, 0)) {
-      const HANDLE handles[] = {timer_};
+    if (SetWaitableTimerEx(timer_.get(), &due_time, 0, nullptr, nullptr, nullptr, 0)) {
+      const HANDLE handles[] = {timer_.get()};
       MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
       return;
     }

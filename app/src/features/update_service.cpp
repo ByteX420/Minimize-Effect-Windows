@@ -581,14 +581,8 @@ void UpdateService::Stop() {
   worker_.join();
   std::scoped_lock lock(mutex_);
   notification_window_ = nullptr;
-  if (installer_ready_event_ != nullptr) {
-    CloseHandle(installer_ready_event_);
-    installer_ready_event_ = nullptr;
-  }
-  if (installer_process_ != nullptr) {
-    CloseHandle(installer_process_);
-    installer_process_ = nullptr;
-  }
+  installer_ready_event_.reset();
+  installer_process_.reset();
   installer_started_at_ms_ = 0;
 }
 
@@ -979,10 +973,8 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
   }
   {
     std::scoped_lock lock(mutex_);
-    if (installer_ready_event_ != nullptr) CloseHandle(installer_ready_event_);
-    if (installer_process_ != nullptr) CloseHandle(installer_process_);
-    installer_ready_event_ = ready_event;
-    installer_process_ = nullptr;
+    installer_ready_event_.reset(ready_event);
+    installer_process_.reset();
     installer_started_at_ms_ = 0;
   }
 
@@ -1006,8 +998,7 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
     RestoreInstalledBackups(current, target_hook);
     {
       std::scoped_lock lock(mutex_);
-      CloseHandle(installer_ready_event_);
-      installer_ready_event_ = nullptr;
+      installer_ready_event_.reset();
     }
     UpdateSnapshot failed = GetSnapshot();
     failed.phase = UpdatePhase::kError;
@@ -1017,10 +1008,10 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
     SetSnapshot(std::move(failed));
     return false;
   }
-  CloseHandle(process.hThread);
+  wil::unique_handle process_thread(process.hThread);
   {
     std::scoped_lock lock(mutex_);
-    installer_process_ = process.hProcess;
+    installer_process_.reset(process.hProcess);
     installer_started_at_ms_ = GetTickCount64();
   }
   MutateSnapshot([](UpdateSnapshot& snapshot) {
@@ -1032,8 +1023,8 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
 
 bool UpdateService::InstallerHandoverReady() {
   std::scoped_lock lock(mutex_);
-  return installer_ready_event_ != nullptr &&
-         WaitForSingleObject(installer_ready_event_, 0) == WAIT_OBJECT_0;
+  return installer_ready_event_ &&
+         WaitForSingleObject(installer_ready_event_.get(), 0) == WAIT_OBJECT_0;
 }
 
 bool UpdateService::InstallerHandoverFailed() {
@@ -1042,8 +1033,8 @@ bool UpdateService::InstallerHandoverFailed() {
   ULONGLONG started_at = 0;
   {
     std::scoped_lock lock(mutex_);
-    process = installer_process_;
-    ready_event = installer_ready_event_;
+    process = installer_process_.get();
+    ready_event = installer_ready_event_.get();
     started_at = installer_started_at_ms_;
   }
   if (process == nullptr || ready_event == nullptr ||
@@ -1064,10 +1055,8 @@ bool UpdateService::InstallerHandoverFailed() {
   }
   {
     std::scoped_lock lock(mutex_);
-    if (installer_process_ != nullptr) CloseHandle(installer_process_);
-    if (installer_ready_event_ != nullptr) CloseHandle(installer_ready_event_);
-    installer_process_ = nullptr;
-    installer_ready_event_ = nullptr;
+    installer_process_.reset();
+    installer_ready_event_.reset();
     installer_started_at_ms_ = 0;
   }
   UpdateSnapshot failed = GetSnapshot();

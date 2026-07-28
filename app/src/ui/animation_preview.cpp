@@ -3,6 +3,7 @@
 #include "ui/animation_preview.hpp"
 
 #include <algorithm>
+#include <wil/resource.h>
 
 namespace minimize::ui {
 namespace {
@@ -95,24 +96,21 @@ LRESULT CALLBACK AnimationPreview::WindowProc(HWND window, UINT message, WPARAM 
       HDC dc = BeginPaint(window, &paint);
       RECT client{};
       GetClientRect(window, &client);
-      HBRUSH background = CreateSolidBrush(RGB(20, 20, 22));
-      FillRect(dc, &client, background);
-      DeleteObject(background);
+      wil::unique_hbrush background(CreateSolidBrush(RGB(20, 20, 22)));
+      FillRect(dc, &client, background.get());
       RECT accent = client;
       accent.bottom = accent.top + 3;
-      HBRUSH accent_brush = CreateSolidBrush(RGB(232, 232, 236));
-      FillRect(dc, &accent, accent_brush);
-      DeleteObject(accent_brush);
+      wil::unique_hbrush accent_brush(CreateSolidBrush(RGB(232, 232, 236)));
+      FillRect(dc, &accent, accent_brush.get());
       const int font_height = -MulDiv(36, GetDeviceCaps(dc, LOGPIXELSY), 72);
-      HFONT font = CreateFontW(font_height, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-                               DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-                               CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Inter");
-      HGDIOBJ old_font = SelectObject(dc, font);
+      wil::unique_hfont font(CreateFontW(font_height, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                                         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_SWISS, L"Inter"));
+      HGDIOBJ old_font = SelectObject(dc, font.get());
       SetBkMode(dc, TRANSPARENT);
       SetTextColor(dc, RGB(242, 242, 244));
       DrawTextW(dc, L"Preview", -1, &client, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
       SelectObject(dc, old_font);
-      DeleteObject(font);
       EndPaint(window, &paint);
       return 0;
     }

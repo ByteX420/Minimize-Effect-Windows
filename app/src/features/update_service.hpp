@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <windows.h>
+#include <wil/resource.h>
 
 namespace minimize::features {
 
@@ -81,8 +82,8 @@ private:
   PendingAction pending_action_ = PendingAction::kNone;
   bool pending_check_user_initiated_ = false;
   bool cancel_requested_ = false;
-  HANDLE installer_ready_event_ = nullptr;
-  HANDLE installer_process_ = nullptr;
+  wil::unique_handle installer_ready_event_;
+  wil::unique_handle installer_process_;
   ULONGLONG installer_started_at_ms_ = 0;
   UpdateSnapshot snapshot_;
   std::string package_url_;

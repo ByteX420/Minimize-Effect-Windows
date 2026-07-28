@@ -7,6 +7,7 @@
 #include <string>
 #include <system_error>
 #include <vector>
+#include <wil/resource.h>
 
 #include "core/environment.hpp"
 
@@ -33,38 +34,6 @@ private:
   SRWLOCK& lock_;
 };
 
-class SafeFileHandle final {
-public:
-  SafeFileHandle() noexcept = default;
-  explicit SafeFileHandle(HANDLE h) noexcept : handle_(h) {}
-  ~SafeFileHandle() noexcept { Close(); }
-
-  SafeFileHandle(const SafeFileHandle&) = delete;
-  SafeFileHandle& operator=(const SafeFileHandle&) = delete;
-  SafeFileHandle(SafeFileHandle&& o) noexcept
-      : handle_(std::exchange(o.handle_, INVALID_HANDLE_VALUE)) {}
-  SafeFileHandle& operator=(SafeFileHandle&& o) noexcept {
-    if (this != &o) {
-      Close();
-      handle_ = std::exchange(o.handle_, INVALID_HANDLE_VALUE);
-    }
-    return *this;
-  }
-
-  [[nodiscard]] HANDLE get() const noexcept { return handle_; }
-  [[nodiscard]] bool valid() const noexcept { return handle_ != INVALID_HANDLE_VALUE; }
-
-  void Close() noexcept {
-    if (handle_ != INVALID_HANDLE_VALUE) {
-      CloseHandle(handle_);
-      handle_ = INVALID_HANDLE_VALUE;
-    }
-  }
-
-private:
-  HANDLE handle_ = INVALID_HANDLE_VALUE;
-};
-
 class LoggerState final {
 public:
   ~LoggerState() noexcept { Close(); }
@@ -82,12 +51,12 @@ public:
     if (entry.empty()) return;
 
     SRWLockGuard lock(lock_);
-    if (!file_.valid()) {
+    if (!file_) {
       HANDLE h = CreateFileW(DebugLogPath().c_str(), FILE_APPEND_DATA,
                              FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
                              OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
       if (h != INVALID_HANDLE_VALUE) {
-        file_ = SafeFileHandle(h);
+        file_.reset(h);
         LARGE_INTEGER size{};
         if (GetFileSizeEx(file_.get(), &size) && size.QuadPart == 0) {
           constexpr unsigned char kUtf8Bom[] = {0xef, 0xbb, 0xbf};
@@ -97,12 +66,12 @@ public:
       }
     }
 
-    if (file_.valid()) {
+    if (file_) {
       DWORD written = 0;
       const DWORD requested = static_cast<DWORD>(entry.size());
       if (!WriteFile(file_.get(), entry.data(), requested, &written, nullptr) ||
           written != requested) {
-        file_.Close();
+        file_.reset();
       } else if (IsSynchronousLoggingEnabled()) {
         FlushFileBuffers(file_.get());
       }
@@ -115,14 +84,14 @@ public:
   void Close() noexcept {
 #ifdef _DEBUG
     SRWLockGuard lock(lock_);
-    file_.Close();
+    file_.reset();
 #endif
   }
 
 private:
   LoggerState() noexcept = default;
 
-  SafeFileHandle file_;
+  wil::unique_hfile file_;
   SRWLOCK lock_ = SRWLOCK_INIT;
 };
 

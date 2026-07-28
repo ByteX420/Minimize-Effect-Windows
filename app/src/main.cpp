@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <wil/resource.h>
 
 #include "app/application.hpp"
 #include "platform/windows/process_runtime.hpp"
@@ -99,25 +100,21 @@ int wmain(int argument_count, wchar_t* arguments[]) {
   }
 
   if (launch_options->IsUpdateHandover()) {
-    HANDLE ready_event =
-        OpenEventW(EVENT_MODIFY_STATE, FALSE, launch_options->update_ready_event_name.c_str());
-    if (ready_event != nullptr) {
-      SetEvent(ready_event);
-      CloseHandle(ready_event);
-    }
-    HANDLE parent =
-        OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                    launch_options->update_parent_process_id);
-    if (parent != nullptr) {
+    wil::unique_handle ready_event(
+        OpenEventW(EVENT_MODIFY_STATE, FALSE, launch_options->update_ready_event_name.c_str()));
+    if (ready_event) SetEvent(ready_event.get());
+    wil::unique_handle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                          launch_options->update_parent_process_id));
+    if (parent) {
       const ULONGLONG handover_deadline = GetTickCount64() + 30000;
       DWORD parent_wait = WAIT_TIMEOUT;
       while (GetTickCount64() < handover_deadline) {
-        parent_wait = MsgWaitForMultipleObjects(1, &parent, FALSE, 16, QS_ALLINPUT);
+        const HANDLE parent_handle = parent.get();
+        parent_wait = MsgWaitForMultipleObjects(1, &parent_handle, FALSE, 16, QS_ALLINPUT);
         if (parent_wait == WAIT_OBJECT_0 || parent_wait == WAIT_FAILED) break;
         MSG message{};
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
           if (message.message == WM_QUIT) {
-            CloseHandle(parent);
             return 0;
           }
           TranslateMessage(&message);
@@ -125,7 +122,6 @@ int wmain(int argument_count, wchar_t* arguments[]) {
         }
         application.RenderUpdateHandoverFrame();
       }
-      CloseHandle(parent);
     }
 
     for (int attempt = 0; attempt < 100; ++attempt) {

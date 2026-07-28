@@ -10,6 +10,7 @@
 #include <shellapi.h>
 #include <uiautomation.h>
 #include <winver.h>
+#include <wil/resource.h>
 
 #include "core/logger.hpp"
 #include "platform/windows/taskbar_locator.hpp"
@@ -100,11 +101,11 @@ bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out
   GetWindowThreadProcessId(window, &process_id);
   std::wstring process_name;
   std::wstring process_description;
-  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
-  if (process != nullptr) {
+  wil::unique_handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id));
+  if (process) {
     wchar_t path[MAX_PATH]{};
     DWORD size = static_cast<DWORD>(std::size(path));
-    if (QueryFullProcessImageNameW(process, 0, path, &size)) {
+    if (QueryFullProcessImageNameW(process.get(), 0, path, &size)) {
       wchar_t* filename = wcsrchr(path, L'\\');
       if (filename != nullptr) {
         process_name = filename + 1;
@@ -113,7 +114,6 @@ bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out
       }
       process_description = GetProcessDescription(path);
     }
-    CloseHandle(process);
   }
 
   std::wstring process_no_ext = ToLower(process_name);

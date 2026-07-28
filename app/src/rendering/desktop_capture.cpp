@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <iostream>
+#include <wil/resource.h>
 
 #include "core/logger.hpp"
 #include "rendering/capture_geometry.hpp"
@@ -109,13 +110,12 @@ bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rec
     return false;
   }
 
-  HDC screen_dc = GetDC(nullptr);
-  if (screen_dc == nullptr) {
+  auto screen_dc = wil::GetDC(nullptr);
+  if (!screen_dc) {
     return false;
   }
-  HDC memory_dc = CreateCompatibleDC(screen_dc);
-  if (memory_dc == nullptr) {
-    ReleaseDC(nullptr, screen_dc);
+  wil::unique_hdc memory_dc(CreateCompatibleDC(screen_dc.get()));
+  if (!memory_dc) {
     return false;
   }
 
@@ -128,28 +128,27 @@ bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rec
   bitmap_info.bmiHeader.biCompression = BI_RGB;
 
   void* bitmap_bits = nullptr;
-  HBITMAP bitmap =
-      CreateDIBSection(screen_dc, &bitmap_info, DIB_RGB_COLORS, &bitmap_bits, nullptr, 0);
-  ReleaseDC(nullptr, screen_dc);
-  if (bitmap == nullptr || bitmap_bits == nullptr) {
-    DeleteDC(memory_dc);
+  wil::unique_hbitmap bitmap(
+      CreateDIBSection(screen_dc.get(), &bitmap_info, DIB_RGB_COLORS, &bitmap_bits, nullptr, 0));
+  screen_dc.reset();
+  if (!bitmap || bitmap_bits == nullptr) {
     return false;
   }
 
-  HGDIOBJ old_bitmap = SelectObject(memory_dc, bitmap);
+  HGDIOBJ old_bitmap = SelectObject(memory_dc.get(), bitmap.get());
   if (old_bitmap == nullptr || old_bitmap == HGDI_ERROR) {
-    DeleteObject(bitmap);
-    DeleteDC(memory_dc);
     return false;
   }
+  auto restore_bitmap =
+      wil::scope_exit([&] { SelectObject(memory_dc.get(), old_bitmap); });
   RECT paint_rect{0, 0, window_width, window_height};
   HBRUSH black_brush = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-  FillRect(memory_dc, &paint_rect, black_brush);
+  FillRect(memory_dc.get(), &paint_rect, black_brush);
 
   constexpr UINT kPrintWindowRenderFullContent = 0x00000002;
-  BOOL printed = PrintWindow(window, memory_dc, kPrintWindowRenderFullContent);
+  BOOL printed = PrintWindow(window, memory_dc.get(), kPrintWindowRenderFullContent);
   if (printed == FALSE) {
-    printed = PrintWindow(window, memory_dc, 0);
+    printed = PrintWindow(window, memory_dc.get(), 0);
   }
   GdiFlush();
 
@@ -169,10 +168,6 @@ bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rec
     }
     NormalizeCapturedAlpha(window, &visual_metadata, &pixels);
   }
-
-  SelectObject(memory_dc, old_bitmap);
-  DeleteObject(bitmap);
-  DeleteDC(memory_dc);
 
   if (printed == FALSE) {
     minimize::core::LogTrace(L"DesktopCapture",

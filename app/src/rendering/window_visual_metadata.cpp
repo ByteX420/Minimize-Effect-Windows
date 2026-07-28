@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <dwmapi.h>
+#include <wil/resource.h>
 
 namespace minimize::rendering {
 namespace {
@@ -22,16 +23,9 @@ float WindowCornerRadius(HWND window) {
   return static_cast<float>(MulDiv(base_radius, std::max(GetDpiForWindow(window), 96U), 96));
 }
 
-struct GdiObjectDeleter {
-  void operator()(HGDIOBJ handle) const noexcept {
-    if (handle != nullptr) ::DeleteObject(handle);
-  }
-};
-using UniqueRgn = std::unique_ptr<std::remove_pointer_t<HRGN>, GdiObjectDeleter>;
-
 Region WindowRegion(HWND window) {
   Region result;
-  UniqueRgn region(CreateRectRgn(0, 0, 0, 0));
+  wil::unique_hrgn region(CreateRectRgn(0, 0, 0, 0));
   if (!region) return result;
 
   const int region_type = GetWindowRgn(window, region.get());

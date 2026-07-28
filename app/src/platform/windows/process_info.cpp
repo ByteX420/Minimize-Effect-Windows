@@ -8,6 +8,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include <wil/resource.h>
 
 
 namespace minimize::platform {
@@ -28,39 +29,6 @@ std::string WideToUtf8(std::wstring_view value) {
   return result;
 }
 
-class [[nodiscard]] UniqueHandle final {
-public:
-  UniqueHandle() noexcept = default;
-  explicit UniqueHandle(HANDLE h) noexcept : handle_(h) {}
-  ~UniqueHandle() noexcept { Close(); }
-
-  UniqueHandle(const UniqueHandle&) = delete;
-  UniqueHandle& operator=(const UniqueHandle&) = delete;
-  UniqueHandle(UniqueHandle&& o) noexcept : handle_(std::exchange(o.handle_, nullptr)) {}
-  UniqueHandle& operator=(UniqueHandle&& o) noexcept {
-    if (this != &o) {
-      Close();
-      handle_ = std::exchange(o.handle_, nullptr);
-    }
-    return *this;
-  }
-
-  [[nodiscard]] HANDLE get() const noexcept { return handle_; }
-  [[nodiscard]] explicit operator bool() const noexcept {
-    return handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE;
-  }
-
-  void Close() noexcept {
-    if (handle_ != nullptr && handle_ != INVALID_HANDLE_VALUE) {
-      CloseHandle(handle_);
-      handle_ = nullptr;
-    }
-  }
-
-private:
-  HANDLE handle_ = nullptr;
-};
-
 }  // namespace
 
 DWORD WindowProcessId(HWND window) {
@@ -74,7 +42,7 @@ std::optional<std::string> GetWindowExecutableName(HWND window) {
   const DWORD process_id = WindowProcessId(window);
   if (process_id == 0) return std::nullopt;
 
-  UniqueHandle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id));
+  wil::unique_handle process(OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id));
   if (!process) return std::nullopt;
 
   std::array<wchar_t, MAX_PATH> stack_path{};
@@ -107,7 +75,7 @@ std::optional<std::string> GetWindowExecutableName(HWND window) {
 bool IsCurrentProcessElevated() {
   HANDLE token = nullptr;
   if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
-  UniqueHandle token_guard(token);
+  wil::unique_handle token_guard(token);
   TOKEN_ELEVATION elevation{};
   DWORD size = sizeof(elevation);
   return GetTokenInformation(token_guard.get(), TokenElevation, &elevation, sizeof(elevation),

@@ -4,27 +4,10 @@
 
 #include <filesystem>
 #include <string_view>
+#include <wil/resource.h>
 
 namespace minimize::platform::windows {
 namespace {
-
-class UniqueHandle final {
-public:
-  UniqueHandle() = default;
-  explicit UniqueHandle(HANDLE value) : value_(value) {}
-  ~UniqueHandle() {
-    if (value_ != nullptr && value_ != INVALID_HANDLE_VALUE) CloseHandle(value_);
-  }
-  UniqueHandle(const UniqueHandle&) = delete;
-  UniqueHandle& operator=(const UniqueHandle&) = delete;
-  [[nodiscard]] HANDLE Get() const { return value_; }
-  [[nodiscard]] explicit operator bool() const {
-    return value_ != nullptr && value_ != INVALID_HANDLE_VALUE;
-  }
-
-private:
-  HANDLE value_ = nullptr;
-};
 
 std::wstring QuoteArgument(std::wstring_view argument) {
   std::wstring result = L"\"";
@@ -115,12 +98,12 @@ int RunInstaller(int argument_count, wchar_t* arguments[]) {
 
   // Compatibility path for older builds that still launch --apply-update. It is intentionally
   // headless: the parent application owns every visible update frame.
-  UniqueHandle ready_event(OpenEventW(EVENT_MODIFY_STATE, FALSE, arguments[9]));
-  if (ready_event) SetEvent(ready_event.Get());
+  wil::unique_handle ready_event(OpenEventW(EVENT_MODIFY_STATE, FALSE, arguments[9]));
+  if (ready_event) SetEvent(ready_event.get());
 
-  UniqueHandle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                                  static_cast<DWORD>(*parent_id)));
-  if (parent) WaitForSingleObject(parent.Get(), 30000);
+  wil::unique_handle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                       static_cast<DWORD>(*parent_id)));
+  if (parent) WaitForSingleObject(parent.get(), 30000);
 
   std::error_code filesystem_error;
   std::filesystem::remove(backup_executable, filesystem_error);
@@ -152,8 +135,8 @@ int RunInstaller(int argument_count, wchar_t* arguments[]) {
     RestoreBackup(target_hook, backup_hook);
     return static_cast<int>(GetLastError());
   }
-  UniqueHandle process_handle(process.hProcess);
-  UniqueHandle thread_handle(process.hThread);
+  wil::unique_handle process_handle(process.hProcess);
+  wil::unique_handle thread_handle(process.hThread);
   std::filesystem::remove(backup_executable, filesystem_error);
   filesystem_error.clear();
   std::filesystem::remove(backup_hook, filesystem_error);

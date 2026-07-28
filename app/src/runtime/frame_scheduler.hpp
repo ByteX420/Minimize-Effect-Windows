@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <windows.h>
+#include <wil/resource.h>
 
 #include "runtime/animation_run.hpp"
 #include "runtime/animation_run_pool.hpp"
@@ -28,7 +29,7 @@ public:
 private:
   void BeginFallbackTimerResolution();
 
-  HANDLE timer_ = nullptr;
+  wil::unique_handle timer_;
   bool high_resolution_timer_ = false;
   bool fallback_resolution_active_ = false;
   UINT fallback_period_ms_ = 0;

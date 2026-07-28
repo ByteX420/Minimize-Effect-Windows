@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <windows.h>
+#include <wil/resource.h>
 
 namespace minimize::platform::windows {
 
@@ -24,7 +25,7 @@ public:
   [[nodiscard]] DWORD error() const { return error_; }
 
 private:
-  HANDLE mutex_ = nullptr;
+  wil::unique_handle mutex_;
   bool owns_mutex_ = false;
   DWORD error_ = ERROR_SUCCESS;
 };
