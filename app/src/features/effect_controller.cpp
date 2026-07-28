@@ -38,12 +38,8 @@ bool EffectController::IsWindowExcluded(HWND window) const {
 void EffectController::ApplyExclusionTransitionOverrides(HWND overlay) const {
   for (HWND window : platform::EnumerateTopLevelWindows(overlay)) {
     const bool excluded = IsActive() && IsWindowExcluded(window);
-    if (excluded) {
-      SetPropW(window, platform::windows::properties::kExcludedApplication,
-               reinterpret_cast<HANDLE>(1));
-    } else {
-      RemovePropW(window, platform::windows::properties::kExcludedApplication);
-    }
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kExcludedApplication, excluded);
     platform::SetDwmTransitionsDisabled(window, IsActive() && !excluded);
   }
 }
@@ -63,12 +59,13 @@ void EffectController::HandleWindowSeen(HWND window, DWORD event, HWND overlay,
 
   const auto executable = platform::GetWindowExecutableName(window);
   if (executable.has_value() && policy_.IsExcluded(*executable)) {
-    SetPropW(window, platform::windows::properties::kExcludedApplication,
-             reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kExcludedApplication);
     platform::SetDwmTransitionsDisabled(window, false);
     return;
   }
-  RemovePropW(window, platform::windows::properties::kExcludedApplication);
+  platform::windows::properties::SetFlag(
+      window, platform::windows::properties::WindowFlag::kExcludedApplication, false);
   if (minimize_.IsAnimating(window)) return;
   animation_blocker.SetTransitionsDisabledForWindow(window, true);
 

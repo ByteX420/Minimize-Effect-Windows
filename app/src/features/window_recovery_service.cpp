@@ -24,12 +24,14 @@ void WindowRecoveryService::Restore(HWND window, bool force_show_if_iconic) {
   const bool was_maximized =
       snapshot != nullptr
           ? snapshot->was_maximized
-          : GetPropW(window, platform::windows::properties::kWasMaximized) != nullptr;
+          : platform::windows::properties::WasMaximized(window);
 
   if (IsIconic(window) == FALSE || force_show_if_iconic) {
-    SetPropW(window, platform::windows::properties::kAllowRestore, reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowRestore);
     ShowWindow(window, was_maximized ? SW_SHOWMAXIMIZED : SW_RESTORE);
-    RemovePropW(window, platform::windows::properties::kAllowRestore);
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowRestore, false);
   }
 
   // Keep the real window alpha-hidden while its restored placement and first composed frame
@@ -54,9 +56,11 @@ void WindowRecoveryService::ReleaseWithoutShowing(HWND window, bool finish_as_mi
   if (finish_as_minimized && IsIconic(window) == FALSE &&
       platform::windows::properties::HasMinimizeState(window)) {
     platform::SetDwmTransitionsDisabled(window, true);
-    SetPropW(window, platform::windows::properties::kAllowMinimize, reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowMinimize);
     ShowWindow(window, SW_SHOWMINNOACTIVE);
-    RemovePropW(window, platform::windows::properties::kAllowMinimize);
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
     platform::SetDwmTransitionsDisabled(window, false);
   }
 
@@ -74,7 +78,6 @@ std::size_t WindowRecoveryService::HealLeftovers() {
       [](HWND window, LPARAM parameter) -> BOOL {
         auto* context =
             reinterpret_cast<std::pair<WindowRecoveryService*, std::size_t*>*>(parameter);
-        RemovePropW(window, platform::windows::properties::kExcludedApplication);
         if (platform::windows::properties::HasMinimizeState(window)) {
           core::LogDebug(L"Recovery",
                          L"Restoring leftover window hwnd=0x" +
@@ -91,7 +94,6 @@ std::size_t WindowRecoveryService::HealLeftovers() {
 void WindowRecoveryService::HealUntrackedWindows() {
   EnumWindows(
       [](HWND window, LPARAM) -> BOOL {
-        RemovePropW(window, platform::windows::properties::kExcludedApplication);
         if (platform::windows::properties::HasMinimizeState(window)) {
           platform::SetWindowCloaked(window, false);
           platform::windows::properties::RestoreTransparency(window);

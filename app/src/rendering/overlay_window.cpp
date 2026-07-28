@@ -92,6 +92,8 @@ bool OverlayWindow::Initialize(HINSTANCE instance, D3dDevice* d3d_device,
   restore_callback_ = std::move(restore_callback);
   minimize_attempt_message_ = RegisterWindowMessageW(L"MinimizeMinimizeAttempt");
   restore_attempt_message_ = RegisterWindowMessageW(L"MinimizeRestoreAttempt");
+  query_window_state_message_ =
+      RegisterWindowMessageW(platform::windows::properties::kQueryWindowStateMessage);
   virtual_screen_rect_ = platform::GetVirtualScreenRect();
   overlay_screen_rect_ = RECT{virtual_screen_rect_.left, virtual_screen_rect_.top,
                               virtual_screen_rect_.left + 1, virtual_screen_rect_.top + 1};
@@ -107,6 +109,7 @@ bool OverlayWindow::Initialize(HINSTANCE instance, D3dDevice* d3d_device,
 
   AllowCrossIntegrityMessage(window_, minimize_attempt_message_, L"MinimizeMinimizeAttempt");
   AllowCrossIntegrityMessage(window_, restore_attempt_message_, L"MinimizeRestoreAttempt");
+  AllowCrossIntegrityMessage(window_, query_window_state_message_, L"MinimizeQueryWindowState");
 
   ClearFrame();
   ShowWindow(window_, SW_SHOWNOACTIVATE);
@@ -289,16 +292,22 @@ LRESULT CALLBACK OverlayWindow::WindowProc(HWND window, UINT message, WPARAM w_p
 }
 
 LRESULT OverlayWindow::HandleMessage(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_param) {
+  if (message == query_window_state_message_ && query_window_state_message_ != 0) {
+    return static_cast<LRESULT>(platform::windows::properties::QueryHookState(
+        reinterpret_cast<HWND>(w_param)));
+  }
+
   if (message == minimize_attempt_message_ && minimize_attempt_message_ != 0) {
     HWND minimize_window = reinterpret_cast<HWND>(w_param);
     if (minimize_callback_ && minimize_callback_(minimize_window)) {
       return 1;
     }
     if (minimize_window != nullptr && IsWindow(minimize_window)) {
-      SetPropW(minimize_window, platform::windows::properties::kAllowMinimize,
-               reinterpret_cast<HANDLE>(1));
+      platform::windows::properties::SetFlag(
+          minimize_window, platform::windows::properties::WindowFlag::kAllowMinimize);
       ShowWindow(minimize_window, SW_MINIMIZE);
-      RemovePropW(minimize_window, platform::windows::properties::kAllowMinimize);
+      platform::windows::properties::SetFlag(
+          minimize_window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
       minimize::core::LogTrace(L"Overlay",
                                L"Minimize callback failed; allowed native minimize fallback");
     }

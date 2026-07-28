@@ -155,12 +155,14 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
     } else {
       minimize_feature_.Complete(window);
       if (native_minimize_pending) {
-        SetPropW(window, platform::windows::properties::kAllowMinimize,
-                 reinterpret_cast<HANDLE>(1));
+        platform::windows::properties::SetFlag(
+            window, platform::windows::properties::WindowFlag::kAllowMinimize);
         ShowWindow(window, SW_MINIMIZE);
-        RemovePropW(window, platform::windows::properties::kAllowMinimize);
+        platform::windows::properties::SetFlag(
+            window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
       }
-      RemovePropW(window, platform::windows::properties::kAllowMinimize);
+      platform::windows::properties::SetFlag(
+          window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
       HRGN hidden_region = CreateRectRgn(0, 0, 0, 0);
       (void)platform::SetOwnedWindowRegion(window, hidden_region, true);
       std::wcout << L"Minimize animation completed.\n";
@@ -376,20 +378,21 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
   restore_feature_.ReleaseAll();
   runtime::SnapshotCache::Contents snapshots = snapshot_cache_.TakeAll();
 
-  // Snapshots of effect-minimized windows first (finish_as_minimized), while effect props still
+  // Snapshots of effect-minimized windows first (finish_as_minimized), while effect state still
   // exist.
   for (const auto& [hwnd, snapshot] : snapshots.restore) {
     (void)snapshot;
     window_recovery_service_.ReleaseWithoutShowing(hwnd, true);
   }
-  // Pre-minimize cache is for still-visible windows — only clear props, never force minimize.
+  // Pre-minimize cache is for still-visible windows — only clear state, never force minimize.
   for (const auto& [hwnd, snapshot] : snapshots.pre_minimize) {
     (void)snapshot;
     window_recovery_service_.ReleaseWithoutShowing(hwnd, false);
   }
 
-  // Safety net: any remaining Minimize cloak/props on the desktop, still without SW_RESTORE.
+  // Safety net: any remaining tracked Minimize windows, still without SW_RESTORE.
   window_recovery_service_.HealUntrackedWindows();
+  platform::windows::properties::ClearAllState();
 
   runs_.ShutdownOverlays();
   settings_window_.Shutdown();

@@ -111,6 +111,7 @@ private:
   std::chrono::steady_clock::time_point target_indicator_hide_time_{};
   UINT minimize_attempt_message_ = 0;
   UINT restore_attempt_message_ = 0;
+  UINT query_window_state_message_ = 0;
   bool device_lost_ = false;
 };
 

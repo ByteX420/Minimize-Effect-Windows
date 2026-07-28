@@ -264,8 +264,8 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
     if (slot.overlay.active() && !slot.overlay.restoring() && slot.animating_window != nullptr) {
       if (!slot.overlay.clock_started()) {
         const bool is_iconic = IsIconic(slot.animating_window) != FALSE;
-        const bool is_moved = GetPropW(slot.animating_window,
-                                       platform::windows::properties::kMovedOffscreen) != nullptr;
+        const bool is_moved = platform::windows::properties::HasFlag(
+            slot.animating_window, platform::windows::properties::WindowFlag::kMovedOffscreen);
         if (is_iconic || is_moved) {
           const bool wait_for_bulk_start =
               slot.bulk_animation && bulk_window_action_ != BulkWindowAction::kNone;

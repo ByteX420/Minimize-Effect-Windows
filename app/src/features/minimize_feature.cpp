@@ -134,7 +134,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   if (run_index != -1) {
     runtime::AnimationRun& run = runs_[run_index];
     if (run.pending_native_minimize_window == window ||
-        GetPropW(window, platform::windows::properties::kAllowMinimize) != nullptr) {
+        platform::windows::properties::HasFlag(
+            window, platform::windows::properties::WindowFlag::kAllowMinimize)) {
       return true;
     }
     if (context.complete_restore) context.complete_restore(window);
@@ -150,7 +151,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   if (run_index == -1) return false;
   runtime::AnimationRun& run = runs_[run_index];
   if (snapshots_.Restore().count(window) > 0 ||
-      GetPropW(window, platform::windows::properties::kIsMinimizing) != nullptr) {
+      platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kIsMinimizing)) {
     return true;
   }
   context.set_state(run_index, runtime::RunState::kCapturing);
@@ -303,10 +305,12 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   context.animation_blocker->SetTransitionsDisabledForWindow(window, true);
   platform::windows::properties::StoreOriginalPlacement(window, original_rect);
   platform::windows::properties::StoreWasMaximized(window, was_maximized);
-  SetPropW(window, platform::windows::properties::kIsMinimizing, reinterpret_cast<HANDLE>(1));
+  platform::windows::properties::SetFlag(
+      window, platform::windows::properties::WindowFlag::kIsMinimizing);
 
   if (IsIconic(window) == FALSE) {
-    SetPropW(window, platform::windows::properties::kAllowMinimize, reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowMinimize);
     const int minimize_command = context.force_animation ? SW_SHOWMINNOACTIVE : SW_MINIMIZE;
     if (!ShowWindowAsync(window, minimize_command)) {
       context.animation_blocker->SetTransitionsDisabledForWindow(window, false);
@@ -320,7 +324,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     run.pending_native_minimize_window = nullptr;
     run.overlay.StartAnimationClock();
     context.set_state(run_index, runtime::RunState::kAnimating);
-    SetPropW(window, platform::windows::properties::kMovedOffscreen, reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kMovedOffscreen);
     auto stored = snapshots_.Restore().find(window);
     if (stored != snapshots_.Restore().end()) stored->second.moved_offscreen = true;
   }
@@ -439,15 +444,17 @@ void MinimizeFeature::CancelSeedSnapshotsForIconicWindows() {
     SeedCandidate& candidate = seed_candidates_[seed_index_];
     if (candidate.window != nullptr && IsWindow(candidate.window)) {
       if (IsIconic(candidate.window) == FALSE) {
-        SetPropW(candidate.window, platform::windows::properties::kAllowMinimize,
-                 reinterpret_cast<HANDLE>(1));
+        platform::windows::properties::SetFlag(
+            candidate.window, platform::windows::properties::WindowFlag::kAllowMinimize);
         WINDOWPLACEMENT placement = candidate.placement;
         placement.showCmd = SW_SHOWMINNOACTIVE;
         SetWindowPlacement(candidate.window, &placement);
       }
       // Always clear temporary state. Restore may have failed and left the window iconic.
-      RemovePropW(candidate.window, platform::windows::properties::kAllowMinimize);
-      RemovePropW(candidate.window, platform::windows::properties::kAllowRestore);
+      platform::windows::properties::SetFlag(
+          candidate.window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
+      platform::windows::properties::SetFlag(
+          candidate.window, platform::windows::properties::WindowFlag::kAllowRestore, false);
       platform::SetDwmTransitionsDisabled(candidate.window, false);
     }
   }
@@ -530,8 +537,8 @@ bool MinimizeFeature::TickSeedSnapshotsForIconicWindows() {
 
   if (seed_phase_ == SeedPhase::kRestoreCurrent) {
     platform::SetDwmTransitionsDisabled(candidate.window, true);
-    SetPropW(candidate.window, platform::windows::properties::kAllowRestore,
-             reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        candidate.window, platform::windows::properties::WindowFlag::kAllowRestore);
     WINDOWPLACEMENT placement = candidate.placement;
     placement.showCmd = SW_SHOWNOACTIVATE;
     SetWindowPlacement(candidate.window, &placement);
@@ -566,13 +573,15 @@ bool MinimizeFeature::TickSeedSnapshotsForIconicWindows() {
     ok = false;
   }
 
-  SetPropW(candidate.window, platform::windows::properties::kAllowMinimize,
-           reinterpret_cast<HANDLE>(1));
+  platform::windows::properties::SetFlag(
+      candidate.window, platform::windows::properties::WindowFlag::kAllowMinimize);
   WINDOWPLACEMENT placement = candidate.placement;
   placement.showCmd = SW_SHOWMINNOACTIVE;
   SetWindowPlacement(candidate.window, &placement);
-  RemovePropW(candidate.window, platform::windows::properties::kAllowMinimize);
-  RemovePropW(candidate.window, platform::windows::properties::kAllowRestore);
+  platform::windows::properties::SetFlag(
+      candidate.window, platform::windows::properties::WindowFlag::kAllowMinimize, false);
+  platform::windows::properties::SetFlag(
+      candidate.window, platform::windows::properties::WindowFlag::kAllowRestore, false);
   platform::SetDwmTransitionsDisabled(candidate.window, false);
 
   if (ok) {
@@ -635,12 +644,11 @@ void MinimizeFeature::CompletePendingNativeMinimize(
 
   const bool was_maximized =
       snapshot->second.was_maximized || (placement.flags & WPF_RESTORETOMAXIMIZED) != 0;
-  if (was_maximized) {
-    SetPropW(window, platform::windows::properties::kWasMaximized, reinterpret_cast<HANDLE>(1));
-  }
+  platform::windows::properties::StoreWasMaximized(window, was_maximized);
   platform::SetWindowCloaked(window, true);
   (void)platform::windows::properties::MakeTransparent(window);
-  SetPropW(window, platform::windows::properties::kMovedOffscreen, reinterpret_cast<HANDLE>(1));
+  platform::windows::properties::SetFlag(
+      window, platform::windows::properties::WindowFlag::kMovedOffscreen);
   snapshot->second.was_maximized = was_maximized;
   snapshot->second.moved_offscreen = true;
   if (start_animation_clock) run.overlay.StartAnimationClock();

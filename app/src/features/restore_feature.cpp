@@ -84,8 +84,10 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
     if (run_index != -1) context.finish_run(run_index);
     const bool has_state =
         snapshots_.Restore().count(window) != 0 ||
-        GetPropW(window, platform::windows::properties::kIsMinimizing) != nullptr ||
-        GetPropW(window, platform::windows::properties::kMovedOffscreen) != nullptr;
+        platform::windows::properties::HasFlag(
+            window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
+        platform::windows::properties::HasFlag(
+            window, platform::windows::properties::WindowFlag::kMovedOffscreen);
     if (has_state) {
       recovery_.Restore(window, false);
       snapshots_.Restore().erase(window);
@@ -112,9 +114,11 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
   const bool has_snapshot = snapshot_iterator != snapshots_.Restore().end();
   const bool moved_offscreen =
       (has_snapshot && snapshot_iterator->second.moved_offscreen) ||
-      GetPropW(window, platform::windows::properties::kMovedOffscreen) != nullptr;
+      platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kMovedOffscreen);
   const bool minimize_minimized =
-      has_snapshot || GetPropW(window, platform::windows::properties::kIsMinimizing) != nullptr;
+      has_snapshot || platform::windows::properties::HasFlag(
+                          window, platform::windows::properties::WindowFlag::kIsMinimizing);
 
   int run_index = context.find_run(window);
   if (run_index != -1) {
@@ -263,14 +267,16 @@ bool RestoreFeature::PreservePlacementAndMarkOffscreen(HWND window,
     snapshot->moved_offscreen = true;
   }
   platform::windows::properties::StoreOriginalPlacement(window, original_rect);
-  SetPropW(window, platform::windows::properties::kMovedOffscreen, reinterpret_cast<HANDLE>(1));
+  platform::windows::properties::SetFlag(
+      window, platform::windows::properties::WindowFlag::kMovedOffscreen);
   platform::windows::properties::StoreWasMaximized(window, was_maximized);
   return true;
 }
 
 bool RestoreFeature::IsWindowRestored(HWND window) const {
   if (snapshots_.Restore().count(window) == 0 &&
-      GetPropW(window, platform::windows::properties::kIsMinimizing) == nullptr) {
+      !platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kIsMinimizing)) {
     return false;
   }
   return IsIconic(window) == FALSE;

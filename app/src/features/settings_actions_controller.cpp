@@ -527,8 +527,10 @@ bool ApplicationRuntime::SetWindowMinimizeExcluded(HWND window, bool excluded) {
     } else {
       const bool has_state =
           snapshot_cache_.Restore().count(window) != 0 ||
-          GetPropW(window, platform::windows::properties::kIsMinimizing) != nullptr ||
-          GetPropW(window, platform::windows::properties::kMovedOffscreen) != nullptr ||
+          platform::windows::properties::HasFlag(
+              window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
+          platform::windows::properties::HasFlag(
+              window, platform::windows::properties::WindowFlag::kMovedOffscreen) ||
           platform::windows::properties::HasMinimizeState(window);
       if (has_state) {
         // Already minimized by Minimize: uncloak/clear props, keep minimized.
@@ -555,9 +557,11 @@ features::OpenWindowsSnapshot ApplicationRuntime::GetOpenWindowsSnapshot() {
 bool ApplicationRuntime::FocusOpenWindow(HWND window) {
   if (window == nullptr || !IsWindow(window)) return false;
   if (IsIconic(window)) {
-    SetPropW(window, platform::windows::properties::kAllowRestore, reinterpret_cast<HANDLE>(1));
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowRestore);
     ShowWindow(window, SW_RESTORE);
-    RemovePropW(window, platform::windows::properties::kAllowRestore);
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowRestore, false);
   }
   SetForegroundWindow(window);
   BringWindowToTop(window);

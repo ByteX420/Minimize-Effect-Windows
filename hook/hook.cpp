@@ -33,6 +33,25 @@ constexpr wchar_t kOverlayClassName[] = L"MinimizeEffectOverlayWindow";
   return msg;
 }
 
+[[nodiscard]] UINT GetQueryWindowStateMessage() noexcept {
+  static const UINT msg = RegisterWindowMessageW(
+      minimize::platform::windows::properties::kQueryWindowStateMessage);
+  return msg;
+}
+
+[[nodiscard]] bool QueryWindowState(HWND overlay, HWND target,
+                                    std::uint32_t* out_state) noexcept {
+  if (overlay == nullptr || target == nullptr || out_state == nullptr) return false;
+  DWORD_PTR raw_state = 0;
+  constexpr UINT kStateQueryTimeoutMs = 50;
+  const LRESULT result =
+      SendMessageTimeoutW(overlay, GetQueryWindowStateMessage(), reinterpret_cast<WPARAM>(target), 0,
+                          SMTO_ABORTIFHUNG | SMTO_BLOCK, kStateQueryTimeoutMs, &raw_state);
+  if (result == 0) return false;
+  *out_state = static_cast<std::uint32_t>(raw_state);
+  return true;
+}
+
 }  // namespace
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) noexcept {
@@ -73,14 +92,17 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
                         title));
       }
 
+      const HWND overlay_window = FindWindowW(kOverlayClassName, nullptr);
+      std::uint32_t window_state = 0;
+      if (!QueryWindowState(overlay_window, target_window, &window_state)) {
+        return CallNextHookEx(nullptr, code, w_param, l_param);
+      }
       if (IsMinimizeCommand(show_cmd)) {
-        if (GetPropW(target_window,
-                     minimize::platform::windows::properties::kExcludedApplication) != nullptr) {
+        if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
           minimize::core::LogTrace(L"HookDLL",
                                    L"Minimize allowed natively for excluded application");
-        } else if (GetPropW(target_window,
-                            minimize::platform::windows::properties::kAllowMinimize) == nullptr) {
-          const HWND overlay_window = FindWindowW(kOverlayClassName, nullptr);
+        } else if ((window_state &
+                    minimize::platform::windows::properties::kHookStateAllowMinimize) == 0) {
           const UINT message = GetMinimizeMessage();
           if (overlay_window != nullptr && message != 0) {
             if (PostMessageW(overlay_window, message, reinterpret_cast<WPARAM>(target_window),
@@ -98,20 +120,17 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
             }
           }
         } else {
-          minimize::core::LogTrace(L"HookDLL",
-                                   L"Minimize allowed by property MinimizeAllowMinimize");
+          minimize::core::LogTrace(L"HookDLL", L"Minimize allowed by application window state");
         }
       }
 
       if (IsRestoreCommand(show_cmd)) {
-        if (GetPropW(target_window,
-                     minimize::platform::windows::properties::kExcludedApplication) != nullptr) {
+        if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
           minimize::core::LogTrace(L"HookDLL",
                                    L"Restore allowed natively for excluded "
                                    L"application");
-        } else if (GetPropW(target_window,
-                            minimize::platform::windows::properties::kAllowRestore) == nullptr) {
-          const HWND overlay_window = FindWindowW(kOverlayClassName, nullptr);
+        } else if ((window_state &
+                    minimize::platform::windows::properties::kHookStateAllowRestore) == 0) {
           const UINT message = GetRestoreMessage();
           if (overlay_window != nullptr && message != 0) {
             DWORD_PTR handled = 0;
@@ -133,7 +152,7 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
             }
           }
         } else {
-          minimize::core::LogTrace(L"HookDLL", L"Restore allowed by property MinimizeAllowRestore");
+          minimize::core::LogTrace(L"HookDLL", L"Restore allowed by application window state");
         }
       }
     }
