@@ -3,14 +3,11 @@
 #include "features/update_service.hpp"
 
 #include <array>
-#include <bcrypt.h>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
-#include <iomanip>
 #include <limits>
 #include <optional>
-#include <sstream>
 #include <string_view>
 #include <utility>
 #include <winrt/Windows.Foundation.h>
@@ -20,6 +17,7 @@
 
 #include "miniz/miniz.h"
 #include "nlohmann/json.hpp"
+#include "picosha2/picosha2.h"
 #include "platform/windows/process_info.hpp"
 
 
@@ -31,37 +29,6 @@ constexpr wchar_t kReleaseApiUrl[] =
 constexpr char kPackageName[] = "MinimizeEffect-windows-x64.zip";
 constexpr char kChecksumName[] = "MinimizeEffect-windows-x64.zip.sha256";
 constexpr std::uint64_t kMaximumDownloadBytes = 256ULL * 1024ULL * 1024ULL;
-
-template <typename T, auto CloseFunction>
-class UniqueResource final {
-public:
-  UniqueResource() = default;
-  explicit UniqueResource(T value) : value_(value) {}
-  ~UniqueResource() { Reset(); }
-  UniqueResource(const UniqueResource&) = delete;
-  UniqueResource& operator=(const UniqueResource&) = delete;
-  UniqueResource(UniqueResource&& other) noexcept : value_(std::exchange(other.value_, {})) {}
-  UniqueResource& operator=(UniqueResource&& other) noexcept {
-    if (this != &other) {
-      Reset();
-      value_ = std::exchange(other.value_, {});
-    }
-    return *this;
-  }
-  [[nodiscard]] T Get() const { return value_; }
-  [[nodiscard]] explicit operator bool() const { return value_ != T{}; }
-  void Reset(T value = {}) {
-    if (value_ != T{}) CloseFunction(value_);
-    value_ = value;
-  }
-
-private:
-  T value_{};
-};
-
-void CloseAlgorithm(BCRYPT_ALG_HANDLE handle) { (void)BCryptCloseAlgorithmProvider(handle, 0); }
-using UniqueAlgorithm = UniqueResource<BCRYPT_ALG_HANDLE, CloseAlgorithm>;
-using UniqueHash = UniqueResource<BCRYPT_HASH_HANDLE, BCryptDestroyHash>;
 
 std::wstring Utf8ToWide(std::string_view value) {
   if (value.empty()) return {};
@@ -392,48 +359,11 @@ bool DownloadFile(std::wstring_view url, const std::filesystem::path& destinatio
 }
 
 std::optional<std::string> Sha256(const std::filesystem::path& path) {
-  UniqueAlgorithm algorithm;
-  BCRYPT_ALG_HANDLE algorithm_handle = nullptr;
-  if (!BCRYPT_SUCCESS(
-          BCryptOpenAlgorithmProvider(&algorithm_handle, BCRYPT_SHA256_ALGORITHM, nullptr, 0))) {
-    return std::nullopt;
-  }
-  algorithm.Reset(algorithm_handle);
-  DWORD object_size = 0;
-  DWORD bytes = 0;
-  if (!BCRYPT_SUCCESS(BCryptGetProperty(algorithm.Get(), BCRYPT_OBJECT_LENGTH,
-                                        reinterpret_cast<PUCHAR>(&object_size), sizeof(object_size),
-                                        &bytes, 0))) {
-    return std::nullopt;
-  }
-  std::vector<UCHAR> object(object_size);
-  BCRYPT_HASH_HANDLE hash_handle = nullptr;
-  if (!BCRYPT_SUCCESS(BCryptCreateHash(algorithm.Get(), &hash_handle, object.data(), object_size,
-                                       nullptr, 0, 0))) {
-    return std::nullopt;
-  }
-  UniqueHash hash(hash_handle);
   std::ifstream file(path, std::ios::binary);
   if (!file) return std::nullopt;
-  std::array<char, 64 * 1024> buffer{};
-  while (file) {
-    file.read(buffer.data(), buffer.size());
-    const std::streamsize count = file.gcount();
-    if (count > 0 &&
-        !BCRYPT_SUCCESS(BCryptHashData(hash.Get(), reinterpret_cast<PUCHAR>(buffer.data()),
-                                       static_cast<ULONG>(count), 0))) {
-      return std::nullopt;
-    }
-  }
-  std::array<UCHAR, 32> digest{};
-  if (!BCRYPT_SUCCESS(
-          BCryptFinishHash(hash.Get(), digest.data(), static_cast<ULONG>(digest.size()), 0))) {
-    return std::nullopt;
-  }
-  std::ostringstream output;
-  output << std::hex << std::setfill('0');
-  for (const UCHAR byte : digest) output << std::setw(2) << static_cast<unsigned>(byte);
-  return output.str();
+  const std::string digest = picosha2::hash256_hex_string(
+      std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  return file.bad() ? std::nullopt : std::optional<std::string>(digest);
 }
 
 std::optional<std::string> ParseChecksum(std::string_view value) {
