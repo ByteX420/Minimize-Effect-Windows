@@ -102,6 +102,7 @@ private:
   RECT overlay_screen_rect_{};
   UINT width_ = 0;
   UINT height_ = 0;
+  UINT window_dpi_ = USER_DEFAULT_SCREEN_DPI;
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> render_target_view_;

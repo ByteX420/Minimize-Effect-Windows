@@ -27,6 +27,15 @@ int RectWidth(const RECT& rect) { return static_cast<int>(rect.right - rect.left
 
 int RectHeight(const RECT& rect) { return static_cast<int>(rect.bottom - rect.top); }
 
+LRESULT CALLBACK TargetIndicatorWindowProc(HWND window, UINT message, WPARAM w_param,
+                                           LPARAM l_param) {
+  if (message == WM_DPICHANGED) {
+    // Indicator geometry is already expressed in physical desktop pixels.
+    return 0;
+  }
+  return DefWindowProcW(window, message, w_param, l_param);
+}
+
 minimize::animation::RectF RectToRectF(const RECT& rect) {
   return minimize::animation::RectF{
       .left = static_cast<float>(rect.left),
@@ -141,6 +150,7 @@ bool OverlayWindow::StartAnimation(CapturedTexture captured_texture,
                                    minimize::animation::MinimizeEdge edge, float start_progress,
                                    float target_progress, bool wait_for_first_frame,
                                    bool adjust_taskbar_z_order) {
+  virtual_screen_rect_ = platform::GetVirtualScreenRect();
   minimize::core::LogTrace(
       L"Overlay", L"StartAnimation requested source=" + RectFTraceString(source_screen_rect) +
                       L" target=" + RectFTraceString(target_screen_rect) + L" start_progress=" +
@@ -327,6 +337,14 @@ LRESULT OverlayWindow::HandleMessage(HWND hwnd, UINT message, WPARAM w_param, LP
       return MA_NOACTIVATE;
     case WM_NCHITTEST:
       return HTTRANSPARENT;
+    case WM_DPICHANGED:
+      // The overlay, its mesh and its composition swap chain all use physical desktop pixels.
+      // Applying the suggested logical-DPI rectangle would scale the surface a second time.
+      window_dpi_ = LOWORD(w_param);
+      return 0;
+    case WM_DISPLAYCHANGE:
+      virtual_screen_rect_ = platform::GetVirtualScreenRect();
+      return 0;
     case WM_DESTROY:
       window_ = nullptr;
       return 0;
@@ -352,7 +370,7 @@ bool OverlayWindow::RegisterWindowClass(HINSTANCE instance) {
 
   WNDCLASSEXW indicator_class{};
   indicator_class.cbSize = sizeof(indicator_class);
-  indicator_class.lpfnWndProc = DefWindowProcW;
+  indicator_class.lpfnWndProc = TargetIndicatorWindowProc;
   indicator_class.hInstance = instance;
   indicator_class.hbrBackground = CreateSolidBrush(RGB(92, 154, 255));
   indicator_class.lpszClassName = kTargetIndicatorClassName;
@@ -365,6 +383,11 @@ bool OverlayWindow::RegisterWindowClass(HINSTANCE instance) {
 bool OverlayWindow::CreateOverlayWindow(HINSTANCE instance) {
   constexpr DWORD kExStyle =
       WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT | WS_EX_LAYERED;
+  const DPI_AWARENESS_CONTEXT previous_context =
+      SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+  const auto restore_dpi_context = wil::scope_exit([previous_context] {
+    if (previous_context != nullptr) SetThreadDpiAwarenessContext(previous_context);
+  });
   window_ =
       CreateWindowExW(kExStyle, kOverlayWindowClassName, L"Minimize Effect Overlay", WS_POPUP,
                       overlay_screen_rect_.left, overlay_screen_rect_.top, static_cast<int>(width_),
@@ -375,6 +398,7 @@ bool OverlayWindow::CreateOverlayWindow(HINSTANCE instance) {
   if (target_indicator_window_ != nullptr) {
     SetLayeredWindowAttributes(target_indicator_window_, 0, 190, LWA_ALPHA);
   }
+  if (window_ != nullptr) window_dpi_ = std::max(GetDpiForWindow(window_), 96U);
   return window_ != nullptr && target_indicator_window_ != nullptr;
 }
 
@@ -470,11 +494,28 @@ bool OverlayWindow::CreateRenderTarget() {
 }
 
 bool OverlayWindow::ResizeOverlaySurface(const RECT& screen_rect) {
-  const UINT new_width = static_cast<UINT>(RectWidth(screen_rect));
-  const UINT new_height = static_cast<UINT>(RectHeight(screen_rect));
-  if (new_width == 0 || new_height == 0 || swap_chain_ == nullptr || window_ == nullptr) {
+  const int requested_width = RectWidth(screen_rect);
+  const int requested_height = RectHeight(screen_rect);
+  if (requested_width <= 0 || requested_height <= 0 || swap_chain_ == nullptr ||
+      window_ == nullptr) {
     return false;
   }
+
+  // Move the PMv2 HWND first. Crossing a DPI boundary can synchronously deliver WM_DPICHANGED;
+  // only after that has settled do we size the swap chain to the real physical client area.
+  if (!SetWindowPos(window_, HWND_TOPMOST, screen_rect.left, screen_rect.top, requested_width,
+                    requested_height, SWP_NOACTIVATE | SWP_NOOWNERZORDER)) {
+    return false;
+  }
+
+  RECT actual_window{};
+  RECT actual_client{};
+  if (!GetWindowRect(window_, &actual_window) || !GetClientRect(window_, &actual_client)) {
+    return false;
+  }
+  const UINT new_width = static_cast<UINT>(RectWidth(actual_client));
+  const UINT new_height = static_cast<UINT>(RectHeight(actual_client));
+  if (new_width == 0 || new_height == 0) return false;
 
   if (new_width != width_ || new_height != height_) {
     ID3D11DeviceContext* context = d3d_device_->context();
@@ -494,10 +535,16 @@ bool OverlayWindow::ResizeOverlaySurface(const RECT& screen_rect) {
     }
   }
 
-  overlay_screen_rect_ = screen_rect;
-  return SetWindowPos(window_, HWND_TOPMOST, screen_rect.left, screen_rect.top,
-                      static_cast<int>(new_width), static_cast<int>(new_height),
-                      SWP_NOACTIVATE | SWP_NOOWNERZORDER) != FALSE;
+  overlay_screen_rect_ = actual_window;
+  window_dpi_ = std::max(GetDpiForWindow(window_), 96U);
+  minimize::core::LogTrace(
+      L"Overlay", L"Physical surface rect=" + std::to_wstring(actual_window.left) + L"," +
+                      std::to_wstring(actual_window.top) + L"," +
+                      std::to_wstring(actual_window.right) + L"," +
+                      std::to_wstring(actual_window.bottom) + L" client=" +
+                      std::to_wstring(new_width) + L"x" + std::to_wstring(new_height) + L" dpi=" +
+                      std::to_wstring(window_dpi_));
+  return true;
 }
 
 void OverlayWindow::ApplyVisibleOverlayRegion(HWND taskbar_window) {

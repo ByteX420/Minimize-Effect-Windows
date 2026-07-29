@@ -612,20 +612,28 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
   if (has_matched_button) {
     target = ToRectF(matched_rect);
   } else {
-    constexpr float kTargetWidth = 72.0f;
-    constexpr float kTargetHeight = 48.0f;
+    const HWND dpi_window = FindTaskbarWindowForRect(window_rect);
+    const bool taskbar_is_on_target_monitor =
+        dpi_window != nullptr &&
+        MonitorFromWindow(dpi_window, MONITOR_DEFAULTTONEAREST) == monitor;
+    const UINT target_dpi = taskbar_is_on_target_monitor ? GetDpiForWindow(dpi_window)
+                                                        : GetDpiForWindow(window);
+    const float dpi_scale =
+        static_cast<float>(std::max(target_dpi, 96U)) / USER_DEFAULT_SCREEN_DPI;
+    const float target_width = 72.0f * dpi_scale;
+    const float target_height = 48.0f * dpi_scale;
     const minimize::animation::RectF taskbar = ToRectF(taskbar_rect);
 
     if (tb_width >= tb_height) {
       const float center_x = static_cast<float>(taskbar_rect.left + taskbar_rect.right) * 0.5f;
-      target.left = center_x - (kTargetWidth * 0.5f);
-      target.right = center_x + (kTargetWidth * 0.5f);
+      target.left = center_x - (target_width * 0.5f);
+      target.right = center_x + (target_width * 0.5f);
       target.top = taskbar.top;
       target.bottom = taskbar.bottom;
     } else {
       const float center_y = static_cast<float>(taskbar_rect.top + taskbar_rect.bottom) * 0.5f;
-      target.top = center_y - (kTargetHeight * 0.5f);
-      target.bottom = center_y + (kTargetHeight * 0.5f);
+      target.top = center_y - (target_height * 0.5f);
+      target.bottom = center_y + (target_height * 0.5f);
       target.left = taskbar.left;
       target.right = taskbar.right;
     }
