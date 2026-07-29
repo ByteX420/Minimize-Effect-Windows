@@ -156,6 +156,7 @@ private:
   float current_page_scroll_ = 0.0f;
   std::optional<float> initial_page_scroll_;
   bool initial_maximized_ = false;
+  double update_grid_started_at_ = -1.0;
   std::optional<RECT> initial_bounds_;
 };
 

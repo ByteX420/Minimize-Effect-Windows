@@ -19,10 +19,8 @@ using features::UpdatePhase;
 using features::UpdateSnapshot;
 using theme::WithAlpha;
 
-bool IsTransferPhase(UpdatePhase phase) {
-  return phase == UpdatePhase::kDownloading || phase == UpdatePhase::kVerifying ||
-         phase == UpdatePhase::kStaging;
-}
+constexpr float kGridDuration = 1.5f;
+constexpr float kGridStagger = 0.2f;
 
 std::string FormatBytes(std::uint64_t bytes) {
   if (bytes < 1024) return std::format("{} B", bytes);
@@ -31,58 +29,60 @@ std::string FormatBytes(std::uint64_t bytes) {
   return std::format("{:.1f} MB", kibibytes / 1024.0);
 }
 
-bool MotionButton(motion::MotionSystem& motion_system, const motion::MotionTokens& tokens,
-                  float scale, ImFont* body_font, ImDrawList* draw, const char* id,
-                  const char* label, const ImVec2& minimum, const ImVec2& size, bool primary,
-                  float alpha) {
-  ImGui::SetCursorScreenPos(minimum);
-  ImGui::SetNextItemAllowOverlap();
-  const bool clicked = ImGui::InvisibleButton(id, size);
-  const bool hovered = ImGui::IsItemHovered();
-  const bool held = ImGui::IsItemActive();
-  const std::string key_base = std::string("update/button/") + id;
-  const float hover = motion_system.AnimateValue(key_base + "/hover", hovered ? 1.0f : 0.0f,
-                                                 tokens.hover_fast, 0.0f);
-  const float press =
-      motion_system.AnimateValue(key_base + "/press", held ? 1.0f : 0.0f, tokens.press_fast, 0.0f);
-  const float inset = press * 1.5f * scale;
-  const ImVec2 button_min(minimum.x + inset, minimum.y + inset);
-  const ImVec2 button_max(minimum.x + size.x - inset, minimum.y + size.y - inset);
-  ImVec4 background =
-      primary ? ImVec4(0.91f, 0.91f, 0.93f, 1.0f) : ImVec4(0.12f, 0.12f, 0.13f, 1.0f);
-  if (primary) {
-    background.x = std::min(1.0f, background.x + hover * 0.06f);
-    background.y = std::min(1.0f, background.y + hover * 0.06f);
-    background.z = std::min(1.0f, background.z + hover * 0.06f);
-  } else {
-    background.x += hover * 0.05f;
-    background.y += hover * 0.05f;
-    background.z += hover * 0.05f;
+float CubicBezier(float progress) {
+  // Framer Motion's "easeInOut": cubic-bezier(0.42, 0, 0.58, 1).
+  constexpr float x1 = 0.42f;
+  constexpr float x2 = 0.58f;
+  float parameter = std::clamp(progress, 0.0f, 1.0f);
+  for (int iteration = 0; iteration < 5; ++iteration) {
+    const float inverse = 1.0f - parameter;
+    const float x =
+        3.0f * inverse * inverse * parameter * x1 +
+        3.0f * inverse * parameter * parameter * x2 + parameter * parameter * parameter;
+    const float derivative =
+        3.0f * inverse * inverse * x1 +
+        6.0f * inverse * parameter * (x2 - x1) +
+        3.0f * parameter * parameter * (1.0f - x2);
+    if (std::abs(derivative) < 0.0001f) break;
+    parameter = std::clamp(parameter - (x - progress) / derivative, 0.0f, 1.0f);
   }
-  background.w *= alpha;
-  const float rounding = 9.0f * scale;
-  draw->AddRectFilled(button_min, button_max, ImGui::GetColorU32(background), rounding);
-  if (!primary) {
-    draw->AddRect(button_min, button_max, WithAlpha(theme::kBorder, alpha * 0.9f), rounding, 0,
-                  std::max(1.0f, scale));
+  const float inverse = 1.0f - parameter;
+  return 3.0f * inverse * parameter * parameter + parameter * parameter * parameter;
+}
+
+float GridKeyframeValue(float elapsed, float delay, float middle) {
+  if (elapsed < delay) return 1.0f;
+  const float phase = std::fmod(elapsed - delay, kGridDuration) / kGridDuration;
+  const bool returning = phase >= 0.5f;
+  const float segment = returning ? (phase - 0.5f) * 2.0f : phase * 2.0f;
+  const float eased = CubicBezier(segment);
+  return returning ? std::lerp(middle, 1.0f, eased) : std::lerp(1.0f, middle, eased);
+}
+
+void DrawGridDots(ImDrawList* draw, const ImVec2& center, float elapsed, float scale, float alpha) {
+  constexpr float dot_size = 10.0f;
+  constexpr float gap = 6.0f;
+  const float step = (dot_size + gap) * scale;
+  const float grid_size = (dot_size * 3.0f + gap * 2.0f) * scale;
+  const ImVec2 origin(center.x - grid_size * 0.5f, center.y - grid_size * 0.5f);
+
+  for (int index = 0; index < 9; ++index) {
+    const int column = index % 3;
+    const int row = index / 3;
+    const float delay = static_cast<float>(column + row) * kGridStagger;
+    const float dot_scale = GridKeyframeValue(elapsed, delay, 0.5f);
+    const float opacity = GridKeyframeValue(elapsed, delay, 0.3f) * alpha;
+    const float radius = dot_size * 0.5f * scale * dot_scale;
+    const ImVec2 dot_center(origin.x + dot_size * 0.5f * scale + column * step,
+                            origin.y + dot_size * 0.5f * scale + row * step);
+    draw->AddCircleFilled(dot_center, radius, WithAlpha(theme::kText, opacity), 24);
   }
-  ImFont* font = body_font ? body_font : ImGui::GetFont();
-  const ImVec2 text_size = font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, label);
-  const ImU32 text_color = primary ? IM_COL32(22, 22, 24, static_cast<int>(255.0f * alpha))
-                                   : IM_COL32(226, 226, 231, static_cast<int>(255.0f * alpha));
-  draw->AddText(
-      font, font->FontSize,
-      ImVec2(std::floor(button_min.x + (button_max.x - button_min.x - text_size.x) * 0.5f),
-             std::floor(theme::CenteredTextTop(font, button_min.y, button_max.y - button_min.y))),
-      text_color, label);
-  if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-  return clicked;
 }
 
 void DrawProgress(motion::MotionSystem& motion_system, const motion::MotionTokens& tokens,
                   float scale, ImDrawList* draw, const ImVec2& minimum, float width, float progress,
                   float alpha) {
-  const float height = 7.0f * scale;
+  const float height = 5.0f * scale;
   const ImVec2 maximum(minimum.x + width, minimum.y + height);
   draw->AddRectFilled(minimum, maximum, IM_COL32(255, 255, 255, static_cast<int>(22.0f * alpha)),
                       height * 0.5f);
@@ -96,104 +96,6 @@ void DrawProgress(motion::MotionSystem& motion_system, const motion::MotionToken
   }
 }
 
-void DrawHeroUpdateBadge(ImDrawList* draw, const ImVec2& center, float scale, float alpha,
-                         UpdatePhase phase) {
-  const float badge_size = 68.0f * scale;
-  const ImVec2 badge_min(center.x - badge_size * 0.5f, center.y - badge_size * 0.5f);
-  const ImVec2 badge_max(center.x + badge_size * 0.5f, center.y + badge_size * 0.5f);
-  const float rounding = 16.0f * scale;
-
-  // Frosted Elevated Card Container
-  theme::DrawGradientShadow(draw, badge_min, badge_max, rounding, 0.40f * alpha, scale);
-  draw->AddRectFilled(badge_min, badge_max, IM_COL32(26, 26, 30, static_cast<int>(245.0f * alpha)),
-                      rounding);
-  draw->AddRect(badge_min, badge_max, WithAlpha(theme::kBorder, alpha * 0.9f), rounding, 0,
-                std::max(1.0f, scale));
-
-  // Progress Spinner Ring
-  const float ring_radius = 22.0f * scale;
-  const ImU32 track_color = IM_COL32(255, 255, 255, static_cast<int>(20.0f * alpha));
-  draw->AddCircle(center, ring_radius, track_color, 48, std::max(1.5f, 2.0f * scale));
-
-  const float speed = (phase == UpdatePhase::kError) ? 0.0f : 0.0034f;
-  const float rotation = static_cast<float>((GetTickCount64() % 600000ULL) * speed);
-  const float arc_len = (phase == UpdatePhase::kError) ? 6.283185f : 1.90f;
-  const float stroke = std::max(1.5f, 2.6f * scale);
-  const ImU32 arc_color = (phase == UpdatePhase::kError)
-                              ? IM_COL32(235, 110, 110, static_cast<int>(240.0f * alpha))
-                              : IM_COL32(238, 238, 244, static_cast<int>(255.0f * alpha));
-
-  draw->PathArcTo(center, ring_radius, rotation, rotation + arc_len, 32);
-  draw->PathStroke(arc_color, 0, stroke);
-
-  if (phase != UpdatePhase::kError) {
-    const ImVec2 head_pos(center.x + std::cos(rotation + arc_len) * ring_radius,
-                          center.y + std::sin(rotation + arc_len) * ring_radius);
-    draw->AddCircleFilled(head_pos, 2.0f * scale, IM_COL32(255, 255, 255, static_cast<int>(255.0f * alpha)));
-  }
-
-  // Vector Icon in Badge Center
-  const ImU32 icon_col = IM_COL32(236, 236, 240, static_cast<int>(255.0f * alpha));
-  const float icon_stroke = std::max(1.5f, 2.0f * scale);
-
-  switch (phase) {
-    case UpdatePhase::kDownloading: {
-      // Downward Arrow + Tray
-      draw->AddLine(ImVec2(center.x, center.y - 7.0f * scale),
-                    ImVec2(center.x, center.y + 2.5f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 4.0f * scale, center.y - 1.0f * scale),
-                    ImVec2(center.x, center.y + 3.0f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x + 4.0f * scale, center.y - 1.0f * scale),
-                    ImVec2(center.x, center.y + 3.0f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 6.0f * scale, center.y + 7.5f * scale),
-                    ImVec2(center.x + 6.0f * scale, center.y + 7.5f * scale), icon_col, icon_stroke);
-      break;
-    }
-    case UpdatePhase::kVerifying:
-    case UpdatePhase::kStaging: {
-      // Checkmark
-      draw->AddLine(ImVec2(center.x - 5.0f * scale, center.y + 0.5f * scale),
-                    ImVec2(center.x - 1.5f * scale, center.y + 4.0f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 1.5f * scale, center.y + 4.0f * scale),
-                    ImVec2(center.x + 5.5f * scale, center.y - 3.5f * scale), icon_col, icon_stroke);
-      break;
-    }
-    case UpdatePhase::kReadyToInstall:
-    case UpdatePhase::kInstalling: {
-      // Curved sync arrows
-      draw->PathArcTo(center, 9.0f * scale, 3.4f, 5.8f, 16);
-      draw->PathStroke(icon_col, 0, icon_stroke);
-      draw->AddLine(ImVec2(center.x + 6.0f * scale, center.y - 8.0f * scale),
-                    ImVec2(center.x + 9.5f * scale, center.y - 4.0f * scale), icon_col, icon_stroke);
-      draw->PathArcTo(center, 9.0f * scale, 0.25f, 2.65f, 16);
-      draw->PathStroke(icon_col, 0, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 6.0f * scale, center.y + 8.0f * scale),
-                    ImVec2(center.x - 9.5f * scale, center.y + 4.0f * scale), icon_col, icon_stroke);
-      break;
-    }
-    case UpdatePhase::kError: {
-      // Exclamation Mark
-      const ImU32 err_col = IM_COL32(240, 120, 120, static_cast<int>(255.0f * alpha));
-      draw->AddLine(ImVec2(center.x, center.y - 7.0f * scale),
-                    ImVec2(center.x, center.y + 1.5f * scale), err_col, icon_stroke);
-      draw->AddCircleFilled(ImVec2(center.x, center.y + 6.0f * scale), 1.8f * scale, err_col);
-      break;
-    }
-    default: {
-      // Default download arrow
-      draw->AddLine(ImVec2(center.x, center.y - 7.0f * scale),
-                    ImVec2(center.x, center.y + 2.5f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 4.0f * scale, center.y - 1.0f * scale),
-                    ImVec2(center.x, center.y + 3.0f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x + 4.0f * scale, center.y - 1.0f * scale),
-                    ImVec2(center.x, center.y + 3.0f * scale), icon_col, icon_stroke);
-      draw->AddLine(ImVec2(center.x - 6.0f * scale, center.y + 7.5f * scale),
-                    ImVec2(center.x + 6.0f * scale, center.y + 7.5f * scale), icon_col, icon_stroke);
-      break;
-    }
-  }
-}
-
 }  // namespace
 
 void UpdatePresenter::DrawUpdateWorkspace(SettingsWindow& window) {
@@ -204,7 +106,13 @@ void UpdatePresenter::DrawUpdateWorkspace(SettingsWindow& window) {
       active ? motion::MotionSpec::Timed(0.54f, motion::MotionEasing::kSmootherStep)
              : motion::MotionSpec::Timed(0.50f, motion::MotionEasing::kSmootherStep),
       0.0f);
-  if (show <= 0.005f) return;
+  if (active && window.update_grid_started_at_ < 0.0) {
+    window.update_grid_started_at_ = ImGui::GetTime();
+  }
+  if (show <= 0.005f) {
+    if (!active) window.update_grid_started_at_ = -1.0;
+    return;
+  }
 
   const ImVec2 display = ImGui::GetIO().DisplaySize;
   ImDrawList* draw = ImGui::GetForegroundDrawList();
@@ -227,108 +135,35 @@ void UpdatePresenter::DrawUpdateWorkspace(SettingsWindow& window) {
     ShowWindow(window.hwnd(), IsZoomed(window.hwnd()) ? SW_RESTORE : SW_MAXIMIZE);
   }
 
-  // Smooth synchronized entrance translation
+  // Keep the update workspace intentionally minimal: loader centered, progress directly below.
   const float vertical_shift = (1.0f - show) * 16.0f * scale;
-  const ImVec2 center(display.x * 0.5f, display.y * 0.5f - 40.0f * scale + vertical_shift);
+  const ImVec2 center(display.x * 0.5f, display.y * 0.5f - 12.0f * scale + vertical_shift);
   const float alpha = show;
+  const float elapsed =
+      window.update_grid_started_at_ >= 0.0
+          ? static_cast<float>(ImGui::GetTime() - window.update_grid_started_at_)
+          : 0.0f;
+  DrawGridDots(draw, center, elapsed, scale, alpha);
 
-  // Render Redesigned Hero Badge Loading Component
-  DrawHeroUpdateBadge(draw, center, scale, alpha, snapshot.phase);
-
-  ImFont* title_font = window.font_medium_ ? window.font_medium_ : ImGui::GetFont();
-  ImFont* body_font = window.font_small_ ? window.font_small_ : ImGui::GetFont();
-  std::string title;
-  std::string detail;
-  if (window.update_resume_active_) {
-    title = "Switching versions";
-    detail = "The window stays right here while the new Version takes over";
-  } else {
-    switch (snapshot.phase) {
-      case UpdatePhase::kDownloading:
-        title = snapshot.latest_version.empty() ? "Downloading update"
-                                                : "Downloading v" + snapshot.latest_version;
-        detail = snapshot.total_bytes > 0
-                     ? FormatBytes(snapshot.downloaded_bytes) + " of " +
-                           FormatBytes(snapshot.total_bytes)
-                     : "Receiving the verified package";
-        break;
-      case UpdatePhase::kVerifying:
-        title = "Verifying package";
-        detail = "Checking the SHA-256 signature before anything changes";
-        break;
-      case UpdatePhase::kStaging:
-        title = "Preparing new version";
-        detail = "Keeping your current version ready for automatic rollback";
-        break;
-      case UpdatePhase::kReadyToInstall:
-      case UpdatePhase::kInstalling:
-        title = "Switching versions";
-        detail = "The window stays right here while the new Version takes over";
-        break;
-      case UpdatePhase::kError:
-        title = "Update paused";
-        detail = snapshot.error.empty() ? "Nothing was changed. You can safely try again."
-                                        : snapshot.error;
-        break;
-      default:
-        title = "Preparing update";
-        detail = snapshot.status.empty() ? "Getting everything ready" : snapshot.status;
-        break;
-    }
+  const float progress_width = 190.0f * scale;
+  const ImVec2 progress_min(center.x - progress_width * 0.5f, center.y + 46.0f * scale);
+  float progress = snapshot.progress;
+  if (window.update_resume_active_ || snapshot.phase == UpdatePhase::kReadyToInstall ||
+      snapshot.phase == UpdatePhase::kInstalling) {
+    progress = 1.0f;
   }
-
-  const ImVec2 title_size =
-      title_font->CalcTextSizeA(title_font->FontSize, FLT_MAX, 0.0f, title.c_str());
-  draw->AddText(title_font, title_font->FontSize,
-                ImVec2(center.x - title_size.x * 0.5f, center.y + 54.0f * scale),
-                IM_COL32(237, 237, 241, static_cast<int>(255.0f * alpha)), title.c_str());
-  if (detail.size() > 78) detail = detail.substr(0, 75) + "...";
-  const ImVec2 subtitle_size =
-      body_font->CalcTextSizeA(body_font->FontSize, FLT_MAX, 0.0f, detail.c_str());
-  draw->AddText(body_font, body_font->FontSize,
-                ImVec2(center.x - subtitle_size.x * 0.5f, center.y + 80.0f * scale),
-                IM_COL32(145, 145, 154, static_cast<int>(255.0f * alpha)), detail.c_str());
-
-  const float progress_width = 286.0f * scale;
-  const ImVec2 progress_min(center.x - progress_width * 0.5f, center.y + 116.0f * scale);
-  if (snapshot.phase != UpdatePhase::kError) {
-    float progress = snapshot.progress;
-    if (window.update_resume_active_ || snapshot.phase == UpdatePhase::kReadyToInstall ||
-        snapshot.phase == UpdatePhase::kInstalling) {
-      progress = 1.0f;
-    }
-    DrawProgress(window.motion_system_, window.motion_tokens_, scale, draw, progress_min,
-                 progress_width, progress, alpha);
-  }
-
-  if (!window.update_resume_active_ && snapshot.phase == UpdatePhase::kDownloading) {
-    const ImVec2 cancel_size(96.0f * scale, 34.0f * scale);
-    if (MotionButton(window.motion_system_, window.motion_tokens_, scale, window.font_body_, draw,
-                     "##update_workspace_cancel", "Cancel",
-                     ImVec2(center.x - cancel_size.x * 0.5f, center.y + 150.0f * scale),
-                     cancel_size, false, alpha)) {
-      window.update_service_.CancelDownload();
-      window.update_workspace_engaged_ = false;
-    }
-  } else if (!window.update_resume_active_ && snapshot.phase == UpdatePhase::kError) {
-    const ImVec2 back_size(96.0f * scale, 34.0f * scale);
-    const ImVec2 retry_size(126.0f * scale, 34.0f * scale);
-    const float gap = 10.0f * scale;
-    const float left = center.x - (back_size.x + retry_size.x + gap) * 0.5f;
-    if (MotionButton(window.motion_system_, window.motion_tokens_, scale, window.font_body_, draw,
-                     "##update_workspace_back", "Back",
-                     ImVec2(left, center.y + 142.0f * scale), back_size, false, alpha)) {
-      window.controller_->actions().ResumeAfterUpdateHandoverFailure();
-      window.update_workspace_engaged_ = false;
-      window.update_installer_started_ = false;
-    }
-    if (MotionButton(window.motion_system_, window.motion_tokens_, scale, window.font_body_, draw,
-                     "##update_workspace_retry", "Try again",
-                     ImVec2(left + back_size.x + gap, center.y + 142.0f * scale), retry_size, true,
-                     alpha)) {
-      window.update_installer_started_ = false;
-      window.update_service_.DownloadUpdate();
-    }
+  DrawProgress(window.motion_system_, window.motion_tokens_, scale, draw, progress_min,
+               progress_width, progress, alpha);
+  if (snapshot.phase == UpdatePhase::kDownloading && snapshot.total_bytes > 0) {
+    const std::string amount =
+        FormatBytes(snapshot.downloaded_bytes) + " / " + FormatBytes(snapshot.total_bytes);
+    ImFont* font = window.font_small_ ? window.font_small_ : ImGui::GetFont();
+    const ImVec2 text_size =
+        font->CalcTextSizeA(font->FontSize, FLT_MAX, 0.0f, amount.c_str());
+    draw->AddText(font, font->FontSize,
+                  ImVec2(std::floor(center.x - text_size.x * 0.5f),
+                         std::floor(progress_min.y + 13.0f * scale)),
+                  WithAlpha(theme::kMutedText, alpha), amount.c_str());
   }
 
   if (snapshot.phase == UpdatePhase::kReadyToInstall && show >= 0.985f &&

@@ -374,6 +374,10 @@ void SettingsWindow::HandleUpdateStateChanged() {
     update_card_dismissed_ = false;
     update_notified_version_ = update.latest_version;
   }
+  if (update.phase == features::UpdatePhase::kError && update_workspace_engaged_ &&
+      !update_resume_active_ && !update_installer_started_) {
+    update_workspace_engaged_ = false;
+  }
   ForceRender();
 }
 
