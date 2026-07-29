@@ -224,7 +224,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
                                             &captured_window_bounds)) {
     source_bounds = captured_window_bounds;
   } else if (!already_minimized) {
-    topmost.Activate();
+    // Bulk hotkeys must never reorder every real window as capture fallbacks run.
+    if (!context.force_animation) topmost.Activate();
     context.capture->ClearHistory();
     bool captured = context.capture->CaptureRegion(window, *animation_bounds, &captured_texture);
     if (!captured && !prefer_window_capture) {
@@ -358,9 +359,9 @@ void MinimizeFeature::HandOff(HWND window) { active_.insert(window); }
 
 void MinimizeFeature::Complete(HWND window) { active_.erase(window); }
 
-void MinimizeFeature::Cancel(HWND window, bool force_show_if_iconic) {
+void MinimizeFeature::Cancel(HWND window, bool force_show_if_iconic, bool activate) {
   active_.erase(window);
-  recovery_.Restore(window, force_show_if_iconic);
+  recovery_.Restore(window, force_show_if_iconic, activate);
 }
 
 void MinimizeFeature::CancelAll(bool force_show_if_iconic) {

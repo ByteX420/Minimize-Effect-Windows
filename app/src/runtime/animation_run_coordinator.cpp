@@ -110,6 +110,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
   HWND window = slot.animating_window != nullptr ? slot.animating_window
                                                  : slot.pending_native_minimize_window;
   const bool was_restoring = slot.animating_restore;
+  const bool was_bulk_animation = slot.bulk_animation;
   const bool native_minimize_pending = slot.pending_native_minimize_window == window;
 
   if (outcome == RunCleanupOutcome::kAborted && slot.state != runtime::RunState::kIdle) {
@@ -129,9 +130,9 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
   if (window != nullptr && IsWindow(window)) {
     if (outcome == RunCleanupOutcome::kAborted) {
       if (was_restoring) {
-        restore_feature_.Cancel(window, true);
+        restore_feature_.Cancel(window, true, !was_bulk_animation);
       } else {
-        minimize_feature_.Cancel(window);
+        minimize_feature_.Cancel(window, true, !was_bulk_animation);
       }
       snapshot_cache_.Restore().erase(window);
       snapshot_cache_.PreMinimize().erase(window);
@@ -148,7 +149,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
         }
       }
       minimize_suppressed_until_[window] = now + kPostRestoreMinimizeSuppressionMs;
-      RestoreWindowFromMinimizeState(window);
+      RestoreWindowFromMinimizeState(window, true, !was_bulk_animation);
       slot.overlay.FinishRestoreAnimation();
       snapshot_cache_.Restore().erase(window);
       std::wcout << L"Restore animation completed.\n";
@@ -309,8 +310,9 @@ bool ApplicationRuntime::OnRestoreAttempt(HWND window) {
   return handled;
 }
 
-void ApplicationRuntime::RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic) {
-  window_recovery_service_.Restore(window, force_show_if_iconic);
+void ApplicationRuntime::RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic,
+                                                        bool activate) {
+  window_recovery_service_.Restore(window, force_show_if_iconic, activate);
 }
 
 void ApplicationRuntime::HealLeftoverWindows() {

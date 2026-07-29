@@ -83,7 +83,7 @@ public:
   [[nodiscard]] bool Execute(HWND window, const MinimizeExecutionContext& context);
   [[nodiscard]] std::optional<Transaction> Begin(const MinimizeRequest& request);
   void Complete(HWND window);
-  void Cancel(HWND window, bool force_show_if_iconic = true);
+  void Cancel(HWND window, bool force_show_if_iconic = true, bool activate = true);
   void CancelAll(bool force_show_if_iconic = true);
   // Drop tracking without touching the window (used on shutdown after ReleaseWithoutShowing).
   void ReleaseAll();

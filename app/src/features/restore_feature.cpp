@@ -225,9 +225,9 @@ void RestoreFeature::HandOff(HWND window) { active_.insert(window); }
 
 void RestoreFeature::Complete(HWND window) { active_.erase(window); }
 
-void RestoreFeature::Cancel(HWND window, bool force_show_if_iconic) {
+void RestoreFeature::Cancel(HWND window, bool force_show_if_iconic, bool activate) {
   active_.erase(window);
-  recovery_.Restore(window, force_show_if_iconic);
+  recovery_.Restore(window, force_show_if_iconic, activate);
 }
 
 void RestoreFeature::CancelAll(bool force_show_if_iconic) {

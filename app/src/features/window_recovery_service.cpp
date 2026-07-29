@@ -15,7 +15,7 @@ namespace minimize::features {
 WindowRecoveryService::WindowRecoveryService(runtime::SnapshotCache& snapshots)
     : snapshots_(snapshots) {}
 
-void WindowRecoveryService::Restore(HWND window, bool force_show_if_iconic) {
+void WindowRecoveryService::Restore(HWND window, bool force_show_if_iconic, bool activate) {
   if (!IsWindow(window)) return;
   restoring_ = true;
 
@@ -29,7 +29,20 @@ void WindowRecoveryService::Restore(HWND window, bool force_show_if_iconic) {
   if (IsIconic(window) == FALSE || force_show_if_iconic) {
     platform::windows::properties::SetFlag(
         window, platform::windows::properties::WindowFlag::kAllowRestore);
-    ShowWindow(window, was_maximized ? SW_SHOWMAXIMIZED : SW_RESTORE);
+    if (activate) {
+      ShowWindow(window, was_maximized ? SW_SHOWMAXIMIZED : SW_RESTORE);
+    } else if (was_maximized) {
+      WINDOWPLACEMENT placement{};
+      placement.length = sizeof(placement);
+      bool placed = false;
+      if (GetWindowPlacement(window, &placement)) {
+        placement.showCmd = SW_SHOWMAXIMIZED;
+        placed = SetWindowPlacement(window, &placement) != FALSE;
+      }
+      if (!placed) ShowWindow(window, SW_SHOWNOACTIVATE);
+    } else {
+      ShowWindow(window, SW_SHOWNOACTIVATE);
+    }
     platform::windows::properties::SetFlag(
         window, platform::windows::properties::WindowFlag::kAllowRestore, false);
   }

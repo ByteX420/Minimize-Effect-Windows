@@ -308,6 +308,15 @@ void ApplicationRuntime::ProcessBulkWindowAction() {
     const bool handled = bulk_window_action_ == BulkWindowAction::kMinimize
                              ? OnMinimizeStart(window)
                              : OnRestoreAttempt(window);
+    if (handled && bulk_window_action_ == BulkWindowAction::kMinimize &&
+        FindRunForWindow(window) != -1) {
+      // MinimizeFeature has synchronously captured/cloaked the real window and submitted the
+      // overlay's first frame. Prepare the remaining windows in this same pass instead of
+      // exposing one newly promoted foreground window per scheduler frame.
+      bulk_window_in_flight_ = nullptr;
+      bulk_window_request_started_ms_ = 0;
+      continue;
+    }
     if (!handled) {
       const int fallback_command = bulk_window_action_ == BulkWindowAction::kMinimize
                                        ? SW_SHOWMINNOACTIVE

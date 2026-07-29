@@ -122,7 +122,8 @@ private:
   bool OnMinimizeStart(HWND window);
   bool OnRestoreAttempt(HWND window);
   void FinishActiveAnimation(int run_index);
-  void RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic = true);
+  void RestoreWindowFromMinimizeState(HWND window, bool force_show_if_iconic = true,
+                                      bool activate = true);
   void UpdateTemporaryPause();
   void MinimizeAllWindows();
   void RestoreAllWindows();
