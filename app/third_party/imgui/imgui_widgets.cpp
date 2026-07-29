@@ -42,8 +42,7 @@ Index of this file:
 #include "imgui.h"
 #ifndef IMGUI_DISABLE
 #include "imgui_internal.h"
-#include "menu/motion/motion_context.hpp"
-#include "menu/theme.hpp"
+#include "ui/imgui_widget_integration.hpp"
 #include <unordered_map>
 #include <string>
 

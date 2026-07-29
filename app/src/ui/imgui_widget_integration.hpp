@@ -1,11 +1,27 @@
-﻿#pragma once
+#pragma once
 
 #include "ui/motion/motion.hpp"
 #include "ui/motion/motion_tokens.hpp"
+#include "ui/theme/theme_tokens.hpp"
 
 namespace ui {
 namespace motion = ::minimize::ui::motion;
 }
+
+namespace colors {
+
+inline const ImVec4& main = minimize::ui::theme::kMainColor;
+inline const ImVec4& panel = minimize::ui::theme::kPanelColor;
+inline const ImVec4& border = minimize::ui::theme::kBorderColor;
+inline const ImVec4& panelHeader = minimize::ui::theme::kPanelHeaderColor;
+inline const ImVec4& accent = minimize::ui::theme::kAccentColor;
+inline const ImVec4& text = minimize::ui::theme::kTextColor;
+inline const ImVec4& textDim = minimize::ui::theme::kTextDimColor;
+inline const ImVec4& sidebar = minimize::ui::theme::kSidebarColor;
+inline const ImVec4& subNamespaceBg = minimize::ui::theme::kSubNamespaceBackgroundColor;
+inline const ImVec4& comboBg = minimize::ui::theme::kComboBackgroundColor;
+
+}  // namespace colors
 
 namespace WindowMotion {
 
@@ -19,12 +35,10 @@ public:
               const minimize::ui::motion::MotionSpec& spec) {
     return system_.AnimateValue(key, target, spec);
   }
-
   ImVec4 color(const minimize::ui::motion::MotionKey& key, const ImVec4& target,
                const minimize::ui::motion::MotionSpec& spec, const ImVec4& initial) {
     return system_.AnimateColor(key, target, spec, initial);
   }
-
   void set(const minimize::ui::motion::MotionKey& key, float value) { system_.Set(key, value); }
 
 private:

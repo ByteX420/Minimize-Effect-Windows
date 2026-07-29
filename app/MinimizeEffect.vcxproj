@@ -57,7 +57,7 @@
       <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpplatest</LanguageStandard>
-      <AdditionalIncludeDirectories>$(IntDir)generated;$(ProjectDir)vendor_integration;$(ProjectDir);$(ProjectDir)src;$(ProjectDir)third_party;$(ProjectDir)third_party\wil\include;$(ProjectDir)third_party\spdlog\include;$(ProjectDir)third_party\imgui;$(ProjectDir)third_party\imgui\backends;$(ProjectDir)third_party\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(IntDir)generated;$(ProjectDir);$(ProjectDir)src;$(ProjectDir)third_party;$(ProjectDir)third_party\wil\include;$(ProjectDir)third_party\spdlog\include;$(ProjectDir)third_party\imgui;$(ProjectDir)third_party\imgui\backends;$(ProjectDir)third_party\freetype\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/FS /utf-8 %(AdditionalOptions)</AdditionalOptions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <PrecompiledHeaderFile>pch.hpp</PrecompiledHeaderFile>
@@ -330,6 +330,7 @@
     <ClInclude Include="src\ui\components\easing_editor.hpp" />
     <ClInclude Include="src\ui\components\page_layout.hpp" />
     <ClInclude Include="src\ui\hotkey_presenter.hpp" />
+    <ClInclude Include="src\ui\imgui_widget_integration.hpp" />
     <ClInclude Include="src\ui\motion\motion.hpp" />
     <ClInclude Include="src\ui\motion\motion_context.hpp" />
     <ClInclude Include="src\ui\motion\motion_tokens.hpp" />

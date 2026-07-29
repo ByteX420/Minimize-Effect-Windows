@@ -566,6 +566,9 @@
     <ClInclude Include="src\ui\hotkey_presenter.hpp">
       <Filter>src\ui</Filter>
     </ClInclude>
+    <ClInclude Include="src\ui\imgui_widget_integration.hpp">
+      <Filter>src\ui</Filter>
+    </ClInclude>
     <ClInclude Include="src\ui\motion\motion.hpp">
       <Filter>src\ui\motion</Filter>
     </ClInclude>

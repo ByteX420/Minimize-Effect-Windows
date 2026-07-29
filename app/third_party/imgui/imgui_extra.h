@@ -3,10 +3,9 @@
 
 #include "resources/icons.hpp"
 #include "menu/render/texture.hpp"
-#include "menu/motion/motion_context.hpp"
+#include "ui/imgui_widget_integration.hpp"
 #include "game/globals.hpp"
 #include "menu/window.hpp"
-#include "menu/theme.hpp"
 #include "menu/widgets.hpp"
 #include "features/misc/helpers.hpp"
 #include "app/config/config_manager.hpp"
