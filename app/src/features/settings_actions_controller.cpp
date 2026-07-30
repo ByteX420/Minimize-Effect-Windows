@@ -156,20 +156,6 @@ void ApplicationRuntime::StartBulkWindowAction(BulkWindowAction action) {
     }
   }
 
-  if (action == BulkWindowAction::kMinimize) {
-    // Keep the current foreground window alive until every background window has already received
-    // its non-activating minimize request. Otherwise Windows repeatedly promotes the next window
-    // while the batch is being prepared, which looks like sorting and adds shell latency.
-    HWND foreground = GetForegroundWindow();
-    if (foreground != nullptr) foreground = GetAncestor(foreground, GA_ROOT);
-    const auto foreground_position =
-        std::find(bulk_window_queue_.begin(), bulk_window_queue_.end(), foreground);
-    if (foreground_position != bulk_window_queue_.end()) {
-      bulk_window_queue_.erase(foreground_position);
-      bulk_window_queue_.push_back(foreground);
-    }
-  }
-
   // Allocate every overlay before touching any real window. This removes first-use setup gaps
   // and guarantees that a large batch cannot begin until it has one run per candidate.
   if (!EnsureAnimationRunCapacity(bulk_window_queue_.size())) {
@@ -310,9 +296,8 @@ void ApplicationRuntime::ProcessBulkWindowAction() {
                              : OnRestoreAttempt(window);
     if (handled && bulk_window_action_ == BulkWindowAction::kMinimize &&
         FindRunForWindow(window) != -1) {
-      // MinimizeFeature has synchronously captured/cloaked the real window and submitted the
-      // overlay's first frame. Prepare the remaining windows in this same pass instead of
-      // exposing one newly promoted foreground window per scheduler frame.
+      // MinimizeFeature has synchronously captured the real window and prepared a hidden overlay.
+      // The real window remains untouched until every candidate reaches the shared commit phase.
       bulk_window_in_flight_ = nullptr;
       bulk_window_request_started_ms_ = 0;
       continue;
@@ -332,16 +317,89 @@ void ApplicationRuntime::ProcessBulkWindowAction() {
   }
 
   if (bulk_window_action_ == BulkWindowAction::kMinimize) {
-    const bool all_bulk_runs_prepared =
+    struct PreparedRun {
+      int index = -1;
+      HWND overlay = nullptr;
+      std::size_t z_order = 0;
+    };
+    std::vector<PreparedRun> prepared_runs;
+    const std::vector<HWND> z_order = platform::EnumerateTopLevelWindows(GetOverlayWindow());
+    for (int index = 0; index < static_cast<int>(runs_.size()); ++index) {
+      runtime::AnimationRun& run = runs_[index];
+      if (!run.bulk_animation || run.state != runtime::RunState::kCapturing ||
+          !run.overlay.active() || run.animating_window == nullptr) {
+        continue;
+      }
+      const auto position = std::find(z_order.begin(), z_order.end(), run.animating_window);
+      prepared_runs.push_back(PreparedRun{
+          .index = index,
+          .overlay = run.overlay.window(),
+          .z_order = position == z_order.end()
+                         ? z_order.size()
+                         : static_cast<std::size_t>(std::distance(z_order.begin(), position)),
+      });
+    }
+
+    if (!prepared_runs.empty()) {
+      std::stable_sort(prepared_runs.begin(), prepared_runs.end(),
+                       [](const PreparedRun& left, const PreparedRun& right) {
+                         return left.z_order < right.z_order;
+                       });
+
+      // The real windows are still visible and unchanged here. Reveal every captured clone in
+      // the original desktop Z-order as one transaction, then make/minimize the originals behind
+      // those clones. The user therefore never observes an intermediate promoted or missing
+      // window.
+      bool revealed_together = false;
+      HDWP positions = BeginDeferWindowPos(static_cast<int>(prepared_runs.size()));
+      if (positions != nullptr) {
+        HWND insert_after = HWND_TOPMOST;
+        for (const PreparedRun& prepared : prepared_runs) {
+          positions = DeferWindowPos(
+              positions, prepared.overlay, insert_after, 0, 0, 0, 0,
+              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+          if (positions == nullptr) break;
+          insert_after = prepared.overlay;
+        }
+        if (positions != nullptr) revealed_together = EndDeferWindowPos(positions) != FALSE;
+      }
+      if (!revealed_together) {
+        HWND insert_after = HWND_TOPMOST;
+        for (const PreparedRun& prepared : prepared_runs) {
+          SetWindowPos(
+              prepared.overlay, insert_after, 0, 0, 0, 0,
+              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+          insert_after = prepared.overlay;
+        }
+      }
+
+      for (const PreparedRun& prepared : prepared_runs) {
+        (void)minimize_feature_.CommitPreparedBulkMinimize(
+            prepared.index, &native_animation_blocker_,
+            [this](int index, runtime::RunState state) { SetRunState(index, state); },
+            [this](int index) { CleanupRun(index, RunCleanupOutcome::kAborted); });
+      }
+
+      // Commit overlay visibility and original-window transparency in the same compositor frame,
+      // then release every animation clock without waiting for sequential native minimize events.
+      DwmFlush();
+      for (const PreparedRun& prepared : prepared_runs) {
+        runtime::AnimationRun& run = runs_[prepared.index];
+        if (!run.bulk_animation || !run.overlay.active() || run.overlay.clock_started()) continue;
+        run.overlay.StartAnimationClock();
+        SetRunState(prepared.index, runtime::RunState::kAnimating);
+      }
+    }
+
+    const bool all_native_minimizes_completed =
         std::all_of(runs_.begin(), runs_.end(), [](const runtime::AnimationRun& run) {
           return !run.bulk_animation || !run.overlay.active() ||
                  run.pending_native_minimize_window == nullptr;
         });
-    if (!all_bulk_runs_prepared) return;
+    if (!all_native_minimizes_completed) return;
   }
 
-  // Every bulk overlay has already submitted its transparent first frame. One compositor flush
-  // replaces the previous per-window flush/wait sequence and makes the shared clock start safe.
+  // Native state has caught up with the already-running visual batch.
   DwmFlush();
   core::LogDebug(L"Hotkey", bulk_window_action_ == BulkWindowAction::kMinimize
                                 ? L"Minimize-all queue completed"

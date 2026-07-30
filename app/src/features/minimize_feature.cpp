@@ -302,6 +302,21 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   const float duration = context.animation_configuration->Apply(run.overlay, source_bounds, false,
                                                                 *context.rendering_pressure);
   core::LogTrace(L"Minimize", L"Configured minimize duration=" + std::to_wstring(duration));
+  if (context.force_animation) {
+    // Bulk minimize uses a two-phase transaction. Keep the real window untouched until every
+    // captured overlay is ready, then the controller reveals all overlays before committing the
+    // native minimizes behind them.
+    if (!run.overlay.PrepareHiddenAnimation(captured_texture, ToRectF(source_bounds), target.rect,
+                                            target.edge, 0.0f, 1.0f)) {
+      transaction->HandOff();
+      context.abort_run(run_index);
+      return false;
+    }
+    snapshots_.PreMinimize().erase(window);
+    transaction->HandOff();
+    return true;
+  }
+
   if (!run.overlay.StartAnimation(captured_texture, ToRectF(source_bounds), target.rect, target.edge,
                                   0.0f, 1.0f, !context.force_animation,
                                   !context.force_animation)) {
@@ -342,6 +357,51 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   }
   run.direction_started_ms = GetTickCount64();
   transaction->HandOff();
+  return true;
+}
+
+bool MinimizeFeature::CommitPreparedBulkMinimize(
+    int run_index, platform::NativeAnimationBlocker* animation_blocker,
+    const std::function<void(int, runtime::RunState)>& set_state,
+    const std::function<void(int)>& abort) {
+  if (run_index < 0 || run_index >= static_cast<int>(runs_.size())) return false;
+  runtime::AnimationRun& run = runs_[run_index];
+  const HWND window = run.animating_window;
+  auto snapshot = snapshots_.Restore().find(window);
+  if (!run.bulk_animation || run.state != runtime::RunState::kCapturing ||
+      animation_blocker == nullptr || window == nullptr || !IsWindow(window) ||
+      snapshot == snapshots_.Restore().end() || !run.overlay.active()) {
+    abort(run_index);
+    return false;
+  }
+
+  platform::SetWindowCloaked(window, true);
+  (void)platform::windows::properties::MakeTransparent(window);
+  animation_blocker->SetTransitionsDisabledForWindow(window, true);
+  platform::windows::properties::StoreOriginalPlacement(window,
+                                                        snapshot->second.original_placement);
+  platform::windows::properties::StoreWasMaximized(window, snapshot->second.was_maximized);
+  platform::windows::properties::SetFlag(
+      window, platform::windows::properties::WindowFlag::kIsMinimizing);
+
+  if (IsIconic(window) == FALSE) {
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kAllowMinimize);
+    if (!ShowWindowAsync(window, SW_SHOWMINNOACTIVE)) {
+      animation_blocker->SetTransitionsDisabledForWindow(window, false);
+      abort(run_index);
+      return false;
+    }
+    run.pending_native_minimize_window = window;
+    set_state(run_index, runtime::RunState::kWaitingForNativeMinimize);
+  } else {
+    run.pending_native_minimize_window = nullptr;
+    set_state(run_index, runtime::RunState::kAnimating);
+    platform::windows::properties::SetFlag(
+        window, platform::windows::properties::WindowFlag::kMovedOffscreen);
+    snapshot->second.moved_offscreen = true;
+  }
+  run.direction_started_ms = GetTickCount64();
   return true;
 }
 

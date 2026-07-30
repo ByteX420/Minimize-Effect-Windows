@@ -102,6 +102,10 @@ public:
                                      bool start_animation_clock,
                                      const std::function<void(int, runtime::RunState)>& set_state,
                                      const std::function<void(int)>& abort);
+  [[nodiscard]] bool CommitPreparedBulkMinimize(
+      int run_index, platform::NativeAnimationBlocker* animation_blocker,
+      const std::function<void(int, runtime::RunState)>& set_state,
+      const std::function<void(int)>& abort);
 
 private:
   friend class Transaction;

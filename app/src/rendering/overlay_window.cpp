@@ -248,6 +248,18 @@ bool OverlayWindow::StartAnimation(CapturedTexture captured_texture,
   return true;
 }
 
+bool OverlayWindow::PrepareHiddenAnimation(
+    CapturedTexture captured_texture, const minimize::animation::RectF& source_screen_rect,
+    const minimize::animation::RectF& target_screen_rect,
+    minimize::animation::MinimizeEdge edge, float start_progress, float target_progress) {
+  if (!StartAnimation(std::move(captured_texture), source_screen_rect, target_screen_rect, edge,
+                      start_progress, target_progress, false, false)) {
+    return false;
+  }
+  ShowWindow(window_, SW_HIDE);
+  return true;
+}
+
 void OverlayWindow::StartAnimationClock() { animation_renderer_.StartClock(); }
 
 void OverlayWindow::ContinueMinimizeAnimation() { animation_renderer_.ContinueMinimize(); }
