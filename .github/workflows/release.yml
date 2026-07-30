@@ -322,10 +322,11 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.5.0-beta.3
-            - Configurable reversal animation (custom duration, easing curves & bezier controls when animations are interrupted mid-motion).
-            - Auto-hide taskbar detection (unhides and reveals the Windows taskbar during minimize animations for a smooth landing).
-            - Fixed pre-release update progression (correct tag comparisons for beta-to-beta and rc updates).
+            ### Changes in 1.5.0-beta.4
+            - Prevented sequential window activation and visual delay during minimize-all (windows no longer pop into foreground individually).
+            - More reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
+            - Pixel-exact animation overlays across mixed-DPI displays.
+            - Cleaner update progress display with a compact loading animation, smaller progress bar, and downloaded/total size.
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
@@ -363,10 +364,11 @@ jobs:
             Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
             This build may be unstable and does not replace the latest stable download.
 
-            ### Changes in 1.5.0-beta.3
-            - Configurable reversal animation (custom duration, easing curves & bezier controls when animations are interrupted mid-motion).
-            - Auto-hide taskbar detection (unhides and reveals the Windows taskbar during minimize animations for a smooth landing).
-            - Fixed pre-release update progression (correct tag comparisons for beta-to-beta and rc updates).
+            ### Changes in 1.5.0-beta.4
+            - Prevented sequential window activation and visual delay during minimize-all (windows no longer pop into foreground individually).
+            - More reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
+            - Pixel-exact animation overlays across mixed-DPI displays.
+            - Cleaner update progress display with a compact loading animation, smaller progress bar, and downloaded/total size.
 
             ### Install
             1. Download **${{ steps.package.outputs.name }}**
