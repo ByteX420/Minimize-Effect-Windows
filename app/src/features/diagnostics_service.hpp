@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <functional>
 #include <string>
@@ -12,6 +12,24 @@ class D3dDevice;
 }
 
 namespace minimize::features {
+
+#ifdef _DEBUG
+struct StressTestReport {
+  bool active = false;
+  int current_cycle = 0;
+  int target_cycles = 50;
+  int current_step = 0;
+  std::size_t start_vram_bytes = 0;
+  std::size_t current_vram_bytes = 0;
+  std::size_t peak_vram_bytes = 0;
+  std::size_t start_ram_bytes = 0;
+  std::size_t current_ram_bytes = 0;
+  int deadlocks_detected = 0;
+  int windows_processed = 0;
+  std::string last_log;
+  std::string summary;
+};
+#endif
 
 struct DiagnosticsSnapshot {
   std::string effect;
@@ -30,6 +48,9 @@ struct DiagnosticsSnapshot {
   std::string monitor_configuration;
   std::string log_folder_size;
   std::string report;
+#ifdef _DEBUG
+  StressTestReport stress_test;
+#endif
 };
 
 struct DiagnosticsContext {
@@ -48,6 +69,9 @@ enum class DiagnosticsAction {
   kOpenLogFolder,
   kRepairWindows,
   kRestartRenderer,
+#ifdef _DEBUG
+  kStressTest,
+#endif
 };
 
 struct DiagnosticsActions {
@@ -55,6 +79,9 @@ struct DiagnosticsActions {
   std::function<std::string()> build_report;
   std::function<bool()> repair_windows;
   std::function<bool()> restart_renderer;
+#ifdef _DEBUG
+  std::function<bool()> run_stress_test;
+#endif
 };
 
 class DiagnosticsService final {

@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "features/diagnostics_service.hpp"
 
@@ -187,6 +187,10 @@ bool DiagnosticsService::Execute(DiagnosticsAction action,
       return actions.repair_windows && actions.repair_windows();
     case DiagnosticsAction::kRestartRenderer:
       return actions.restart_renderer && actions.restart_renderer();
+#ifdef _DEBUG
+    case DiagnosticsAction::kStressTest:
+      return actions.run_stress_test && actions.run_stress_test();
+#endif
   }
   return false;
 }

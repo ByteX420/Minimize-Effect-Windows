@@ -78,6 +78,7 @@
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <Optimization>Disabled</Optimization>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <AdditionalOptions>/FS /utf-8 %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -372,7 +373,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
   <Target Name="CompileRendererShaders"
-          BeforeTargets="ClCompile"
+          BeforeTargets="PrepareForBuild;ClCompile"
           Inputs="$(ProjectDir)shaders\genie_mesh.hlsl;$(ProjectDir)shaders\compile.ps1"
           Outputs="$(IntDir)generated\genie_vertex_shader.hpp;$(IntDir)generated\genie_pixel_shader.hpp">
     <MakeDir Directories="$(IntDir)generated" />

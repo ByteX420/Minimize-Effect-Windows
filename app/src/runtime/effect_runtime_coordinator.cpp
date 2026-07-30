@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include <algorithm>
 #include <array>
@@ -378,6 +378,9 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
   // Start at most one new bulk target per runtime tick. Its capture and run setup complete
   // before the next target is posted, while all established overlays continue concurrently.
   ProcessBulkWindowAction();
+#ifdef _DEBUG
+  UpdateStressTest();
+#endif
 
   any_active = false;
   for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {

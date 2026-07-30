@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <atomic>
 #include <chrono>
@@ -94,6 +94,11 @@ public:
   bool ExecuteDiagnosticsAction(features::DiagnosticsAction action) override;
   void HealWindows() override { HealLeftoverWindows(); }
   void RequestExit() override { RequestShutdown(); }
+#ifdef _DEBUG
+  bool RunStressTest();
+  void UpdateStressTest();
+  [[nodiscard]] bool HasActiveAnimationRuns() const;
+#endif
 
 private:
   enum class RunCleanupOutcome {
@@ -215,6 +220,10 @@ private:
   std::atomic<bool> cleaned_up_{false};
   std::atomic<bool> update_handover_prepared_{false};
   bool runtime_services_started_ = false;
+#ifdef _DEBUG
+  features::StressTestReport stress_test_report_;
+  ULONGLONG stress_test_last_step_ms_ = 0;
+#endif
   ui::SettingsWindow settings_window_;
   MessageLoop message_loop_;
 };

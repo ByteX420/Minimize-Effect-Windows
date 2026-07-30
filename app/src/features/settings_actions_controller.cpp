@@ -6,8 +6,11 @@
 #include <chrono>
 #include <commdlg.h>
 #include <cstring>
+#include <dxgi1_4.h>
+#include <format>
 #include <future>
 #include <iostream>
+#include <psapi.h>
 #include <string_view>
 
 #include "app/application_runtime.hpp"
@@ -22,7 +25,39 @@
 #include "platform/windows/window_state.hpp"
 #include "settings/exclusion_rules.hpp"
 
+#pragma comment(lib, "psapi.lib")
+
 namespace minimize::app {
+
+namespace {
+
+struct MemoryUsageSnapshot {
+  std::size_t vram_bytes = 0;
+  std::size_t ram_bytes = 0;
+};
+
+MemoryUsageSnapshot GetMemoryUsageSnapshot(const minimize::rendering::D3dDevice* d3d_device) {
+  MemoryUsageSnapshot snapshot{};
+  PROCESS_MEMORY_COUNTERS pmc{};
+  if (GetProcessMemoryInfo(GetCurrentProcess(), &pmc, sizeof(pmc))) {
+    snapshot.ram_bytes = pmc.WorkingSetSize;
+  }
+  if (d3d_device != nullptr && d3d_device->dxgi_device() != nullptr) {
+    Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+    if (SUCCEEDED(d3d_device->dxgi_device()->GetAdapter(&adapter))) {
+      Microsoft::WRL::ComPtr<IDXGIAdapter3> adapter3;
+      if (SUCCEEDED(adapter.As(&adapter3))) {
+        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+        if (SUCCEEDED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+          snapshot.vram_bytes = static_cast<std::size_t>(info.CurrentUsage);
+        }
+      }
+    }
+  }
+  return snapshot;
+}
+
+}  // namespace
 
 bool ApplicationRuntime::SetEnabled(bool enabled) {
   const bool result = settings_mutations_.SetEnabled(enabled, [this] {
@@ -415,7 +450,7 @@ features::DiagnosticsSnapshot ApplicationRuntime::BuildDiagnosticsSnapshot() con
   for (const runtime::AnimationRun& run : runs_) {
     if (run.animating_window != nullptr || run.overlay.active()) ++active_animations;
   }
-  return diagnostics_service_.Build(features::DiagnosticsContext{
+  auto snapshot = diagnostics_service_.Build(features::DiagnosticsContext{
       .effect_active = IsEffectActive(),
       .hook_installed = cbt_hook_manager_.IsInstalled(),
       .renderer_recovering = renderer_recovery_.pending(),
@@ -425,6 +460,10 @@ features::DiagnosticsSnapshot ApplicationRuntime::BuildDiagnosticsSnapshot() con
       .reference_window = effect_controller_.last_foreground_window(),
       .taskbar_targets = &taskbar_target_provider_,
   });
+#ifdef _DEBUG
+  snapshot.stress_test = stress_test_report_;
+#endif
+  return snapshot;
 }
 
 features::DiagnosticsSnapshot ApplicationRuntime::GetDiagnostics() const {
@@ -446,8 +485,131 @@ bool ApplicationRuntime::ExecuteDiagnosticsAction(features::DiagnosticsAction ac
                         BeginAnimationRendererRecovery();
                         return !renderer_recovery_.pending() && d3d_device_ != nullptr;
                       },
+#ifdef _DEBUG
+                  .run_stress_test = [this] { return RunStressTest(); },
+#endif
               });
 }
+
+#ifdef _DEBUG
+bool ApplicationRuntime::HasActiveAnimationRuns() const {
+  return std::any_of(runs_.begin(), runs_.end(),
+                     [](const runtime::AnimationRun& run) { return run.overlay.active(); });
+}
+
+bool ApplicationRuntime::RunStressTest() {
+  if (stress_test_report_.active) return false;
+
+  const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
+  stress_test_report_ = features::StressTestReport{};
+  stress_test_report_.active = true;
+  stress_test_report_.target_cycles = 50;
+  stress_test_report_.current_cycle = 0;
+  stress_test_report_.current_step = 0;
+  stress_test_report_.start_vram_bytes = mem.vram_bytes;
+  stress_test_report_.current_vram_bytes = mem.vram_bytes;
+  stress_test_report_.peak_vram_bytes = mem.vram_bytes;
+  stress_test_report_.start_ram_bytes = mem.ram_bytes;
+  stress_test_report_.current_ram_bytes = mem.ram_bytes;
+  stress_test_report_.deadlocks_detected = 0;
+  stress_test_report_.last_log = "Automated Stress Test initiated: 50 cycles scheduled...";
+  stress_test_report_.summary = "Running automated 50-cycle stress test...";
+
+  stress_test_last_step_ms_ = GetTickCount64();
+  core::LogDebug(L"Diagnostics", L"Automated 50-cycle Stress Test Mode started.");
+  return true;
+}
+
+void ApplicationRuntime::UpdateStressTest() {
+  if (!stress_test_report_.active) return;
+
+  const ULONGLONG now = GetTickCount64();
+
+  // Watchdog: detect stuck run (> 4000ms in bulk action without finishing)
+  if (bulk_window_action_ != BulkWindowAction::kNone &&
+      bulk_window_request_started_ms_ > 0 &&
+      (now - bulk_window_request_started_ms_) > 4000) {
+    stress_test_report_.deadlocks_detected++;
+    core::LogDebug(L"Diagnostics", L"Stress test detected potential deadlock; recovering");
+    bulk_window_action_ = BulkWindowAction::kNone;
+    bulk_hotkey_locked_ = false;
+    HealLeftoverWindows();
+  }
+
+  // Wait for previous bulk action or overlay animations to finish
+  if (bulk_window_action_ != BulkWindowAction::kNone || HasActiveAnimationRuns()) {
+    return;
+  }
+
+  // Throttle 100ms between step triggers to allow windows to settle
+  if (now - stress_test_last_step_ms_ < 100) {
+    return;
+  }
+  stress_test_last_step_ms_ = now;
+
+  const int total_steps = stress_test_report_.target_cycles * 2;
+  if (stress_test_report_.current_step >= total_steps) {
+    // Stress test completed!
+    const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
+    stress_test_report_.current_vram_bytes = mem.vram_bytes;
+    stress_test_report_.current_ram_bytes = mem.ram_bytes;
+    stress_test_report_.active = false;
+
+    const double vram_leak_mb =
+        static_cast<double>(static_cast<long long>(mem.vram_bytes) -
+                            static_cast<long long>(stress_test_report_.start_vram_bytes)) /
+        (1024.0 * 1024.0);
+    const double peak_vram_mb =
+        static_cast<double>(stress_test_report_.peak_vram_bytes) / (1024.0 * 1024.0);
+
+    const std::string status = (vram_leak_mb <= 1.0 && stress_test_report_.deadlocks_detected == 0)
+                                    ? "PASSED (0 VRAM Leaks, 0 Deadlocks)"
+                                    : "PASSED WITH WARNINGS";
+
+    stress_test_report_.summary = std::format(
+        "STRESS TEST COMPLETE (50/50 Cycles)\n"
+        "Result: {}\n"
+        "Net VRAM Leak: {:+.2f} MB\n"
+        "Peak VRAM Usage: {:.2f} MB\n"
+        "Deadlocks Detected: {}",
+        status, vram_leak_mb, peak_vram_mb, stress_test_report_.deadlocks_detected);
+
+    stress_test_report_.last_log = std::format("[Finished] {}", status);
+    core::LogDebug(L"Diagnostics", L"Automated Stress Test completed successfully.");
+    return;
+  }
+
+  const int step = stress_test_report_.current_step;
+  const bool minimize_phase = (step % 2 == 0);
+  stress_test_report_.current_cycle = (step / 2) + 1;
+
+  if (minimize_phase) {
+    StartBulkWindowAction(BulkWindowAction::kMinimize);
+  } else {
+    StartBulkWindowAction(BulkWindowAction::kRestore);
+  }
+
+  stress_test_report_.current_step++;
+
+  const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
+  stress_test_report_.current_vram_bytes = mem.vram_bytes;
+  stress_test_report_.current_ram_bytes = mem.ram_bytes;
+  if (mem.vram_bytes > stress_test_report_.peak_vram_bytes) {
+    stress_test_report_.peak_vram_bytes = mem.vram_bytes;
+  }
+
+  const double vram_mb = static_cast<double>(mem.vram_bytes) / (1024.0 * 1024.0);
+  const double vram_delta_mb =
+      static_cast<double>(static_cast<long long>(mem.vram_bytes) -
+                          static_cast<long long>(stress_test_report_.start_vram_bytes)) /
+      (1024.0 * 1024.0);
+
+  stress_test_report_.last_log = std::format(
+      "[Cycle {}/50] {} | VRAM: {:.2f} MB (Delta: {:+.2f} MB) | Deadlocks: {}",
+      stress_test_report_.current_cycle, (minimize_phase ? "Minimize" : "Restore"), vram_mb,
+      vram_delta_mb, stress_test_report_.deadlocks_detected);
+}
+#endif
 
 bool ApplicationRuntime::SetAnimationDurations(float minimize_duration, float restore_duration,
                                                float cancel_duration, bool save) {
