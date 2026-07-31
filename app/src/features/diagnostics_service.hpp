@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <string>
+#include <vector>
 #include <windows.h>
 
 namespace minimize::platform {
@@ -16,9 +17,17 @@ namespace minimize::features {
 #ifdef _DEBUG
 struct StressTestReport {
   bool active = false;
+  bool finalizing = false;
   int current_cycle = 0;
-  int target_cycles = 50;
+  int target_cycles = 60;
   int current_step = 0;
+  int actions_requested = 0;
+  int assertions_passed = 0;
+  int assertions_failed = 0;
+  int state_mismatches = 0;
+  int animation_timeouts = 0;
+  int invalid_windows = 0;
+  int leaked_window_states = 0;
   std::size_t start_vram_bytes = 0;
   std::size_t current_vram_bytes = 0;
   std::size_t peak_vram_bytes = 0;
@@ -28,6 +37,7 @@ struct StressTestReport {
   int windows_processed = 0;
   std::string last_log;
   std::string summary;
+  std::vector<std::string> findings;
 };
 #endif
 

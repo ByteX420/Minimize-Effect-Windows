@@ -26,6 +26,9 @@ class AboutPage;
 class AnimationPage;
 class ApplicationsPage;
 class DiagnosticsPage;
+#ifdef _DEBUG
+class StressTestPage;
+#endif
 class GeneralPage;
 class HotkeysPage;
 class DisplaysPage;
@@ -68,6 +71,9 @@ private:
   friend class ui::pages::AnimationPage;
   friend class ui::pages::ApplicationsPage;
   friend class ui::pages::DiagnosticsPage;
+#ifdef _DEBUG
+  friend class ui::pages::StressTestPage;
+#endif
   friend class ui::pages::GeneralPage;
   friend class ui::pages::HotkeysPage;
   friend class ui::pages::DisplaysPage;
@@ -80,6 +86,9 @@ private:
     kWindowsIntegration,
     kHotkeys,
     kDiagnostics,
+#ifdef _DEBUG
+    kStressTest,
+#endif
     kAbout,
   };
 

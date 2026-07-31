@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "features/minimize_feature.hpp"
 
@@ -154,11 +154,11 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   run_index = context.find_available_run();
   if (run_index == -1) return false;
   runtime::AnimationRun& run = runs_[run_index];
-  if (snapshots_.Restore().count(window) > 0 ||
-      platform::windows::properties::HasFlag(
+  if (platform::windows::properties::HasFlag(
           window, platform::windows::properties::WindowFlag::kIsMinimizing)) {
     return true;
   }
+  snapshots_.Restore().erase(window);
   context.set_state(run_index, runtime::RunState::kCapturing);
 
   struct TopmostRestorer {

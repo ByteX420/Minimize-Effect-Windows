@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "runtime/snapshot_cache.hpp"
 
@@ -37,6 +37,14 @@ void SnapshotCache::Prune() {
         });
     if (oldest == pre_minimize_.end()) break;
     pre_minimize_.erase(oldest);
+  }
+  while (restore_.size() > 16) {
+    auto oldest = std::min_element(
+        restore_.begin(), restore_.end(), [](const auto& left, const auto& right) {
+          return left.second.captured_at_ms < right.second.captured_at_ms;
+        });
+    if (oldest == restore_.end()) break;
+    restore_.erase(oldest);
   }
 }
 

@@ -13,6 +13,9 @@
 #include "ui/pages/animation_page.hpp"
 #include "ui/pages/applications_page.hpp"
 #include "ui/pages/diagnostics_page.hpp"
+#ifdef _DEBUG
+#include "ui/pages/stress_test_page.hpp"
+#endif
 #include "ui/pages/displays_page.hpp"
 #include "ui/pages/general_page.hpp"
 #include "ui/pages/hotkeys_page.hpp"
@@ -112,6 +115,9 @@ void SettingsShell::Render(SettingsWindow& window) {
       PageEntry{SettingsWindow::Page::kWindowsIntegration, "System", true},
       PageEntry{SettingsWindow::Page::kHotkeys, "Hotkeys", false},
       PageEntry{SettingsWindow::Page::kDiagnostics, "Repair", false},
+#ifdef _DEBUG
+      PageEntry{SettingsWindow::Page::kStressTest, "Test", false},
+#endif
       PageEntry{SettingsWindow::Page::kAbout, "About", false},
   };
   // Sidebar tabs — same motion vocabulary as SegmentSelector / buttons:
@@ -266,6 +272,11 @@ void SettingsShell::Render(SettingsWindow& window) {
     case SettingsWindow::Page::kDiagnostics:
       page_scope = "repair";
       break;
+#ifdef _DEBUG
+    case SettingsWindow::Page::kStressTest:
+      page_scope = "stress-test";
+      break;
+#endif
     case SettingsWindow::Page::kAbout:
       page_scope = "about";
       break;
@@ -306,6 +317,12 @@ void SettingsShell::Render(SettingsWindow& window) {
   if (window.selected_page_ == SettingsWindow::Page::kDiagnostics) {
     ui::pages::DiagnosticsPage::Render(window, layout, widget_motion, scale, content_alpha);
   }
+
+#ifdef _DEBUG
+  if (window.selected_page_ == SettingsWindow::Page::kStressTest) {
+    ui::pages::StressTestPage::Render(window, layout, widget_motion, scale, content_alpha);
+  }
+#endif
 
   // ── About ───────────────────────────────────────────────────────────────
   if (window.selected_page_ == SettingsWindow::Page::kAbout) {

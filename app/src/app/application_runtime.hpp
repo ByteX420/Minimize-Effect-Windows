@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 #include <windows.h>
 
 #include "app/message_loop.hpp"
@@ -97,6 +98,8 @@ public:
 #ifdef _DEBUG
   bool RunStressTest();
   void UpdateStressTest();
+  void DestroyStressTestWindows();
+  void SetStressTestWindowState(HWND window, bool minimized);
   [[nodiscard]] bool HasActiveAnimationRuns() const;
 #endif
 
@@ -223,6 +226,10 @@ private:
 #ifdef _DEBUG
   features::StressTestReport stress_test_report_;
   ULONGLONG stress_test_last_step_ms_ = 0;
+  ULONGLONG stress_test_step_started_ms_ = 0;
+  ULONGLONG stress_test_settle_started_ms_ = 0;
+  std::vector<HWND> stress_test_windows_;
+  std::unordered_map<HWND, bool> stress_test_expected_iconic_;
 #endif
   ui::SettingsWindow settings_window_;
   MessageLoop message_loop_;

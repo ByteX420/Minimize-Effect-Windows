@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include <algorithm>
 #include <array>
@@ -399,9 +399,10 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
   // Safety net: any remaining tracked Minimize windows, still without SW_RESTORE.
   window_recovery_service_.HealUntrackedWindows();
   platform::windows::properties::ClearAllState();
-  taskbar_target_provider_.RestoreAutoHideTaskbar();
-
   runs_.ShutdownOverlays();
+#ifdef _DEBUG
+  DestroyStressTestWindows();
+#endif
   settings_window_.Shutdown();
   desktop_capture_.reset();
   d3d_device_.reset();

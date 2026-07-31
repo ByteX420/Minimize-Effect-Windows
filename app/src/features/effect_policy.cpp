@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "features/effect_policy.hpp"
 
@@ -9,9 +9,9 @@
 namespace minimize::features {
 namespace {
 
-constexpr int kSmartSkipEnterScore = 5;
-constexpr int kSmartSkipExitScore = 2;
-constexpr std::uint64_t kSmartSkipCooldownMs = 1500;
+constexpr int kSmartSkipEnterScore = 12;
+constexpr int kSmartSkipExitScore = 4;
+constexpr std::uint64_t kSmartSkipCooldownMs = 200;
 
 }  // namespace
 
@@ -45,25 +45,21 @@ bool EffectPolicy::IsExcluded(std::string_view executable_name) const {
 
 int EffectPolicy::ScoreLoad(const RenderingPressure& pressure) const {
   int score = 0;
-  if (pressure.renderer_recovering || pressure.recent_device_failures > 0) score += 3;
-  if (pressure.active_animations >= 2) {
+  if (pressure.renderer_recovering || pressure.recent_device_failures > 0) score += 5;
+  if (pressure.active_animations >= 8) {
+    score += 4;
+  } else if (pressure.active_animations >= 5) {
     score += 2;
-  } else if (pressure.active_animations == 1) {
-    ++score;
   }
-  if (pressure.avg_capture_duration_ms >= 28.0f) {
-    score += 3;
-  } else if (pressure.avg_capture_duration_ms >= 18.0f) {
+  if (pressure.avg_capture_duration_ms >= 60.0f) {
+    score += 4;
+  } else if (pressure.avg_capture_duration_ms >= 40.0f) {
     score += 2;
-  } else if (pressure.avg_capture_duration_ms >= 12.0f) {
-    ++score;
   }
-  if (pressure.recent_missed_frames >= 12) {
-    score += 3;
-  } else if (pressure.recent_missed_frames >= 6) {
+  if (pressure.recent_missed_frames >= 30) {
+    score += 4;
+  } else if (pressure.recent_missed_frames >= 15) {
     score += 2;
-  } else if (pressure.recent_missed_frames >= 3) {
-    ++score;
   }
   return score;
 }

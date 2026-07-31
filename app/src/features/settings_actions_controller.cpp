@@ -492,18 +492,197 @@ bool ApplicationRuntime::ExecuteDiagnosticsAction(features::DiagnosticsAction ac
 }
 
 #ifdef _DEBUG
+namespace {
+
+constexpr wchar_t kStressTestWindowClass[] = L"MinimizeEffectStressTestWindow";
+
+LRESULT CALLBACK StressTestWindowProc(HWND window, UINT message, WPARAM w_param, LPARAM l_param) {
+  switch (message) {
+    case WM_PAINT: {
+      PAINTSTRUCT paint{};
+      HDC dc = BeginPaint(window, &paint);
+      RECT client{};
+      GetClientRect(window, &client);
+
+      // Clean white background (#FFFFFF)
+      HBRUSH bg_brush = CreateSolidBrush(RGB(255, 255, 255));
+      FillRect(dc, &client, bg_brush);
+      DeleteObject(bg_brush);
+
+      // Soft WinUI light header bar (#F3F3F3)
+      RECT header_rect = {client.left, client.top, client.right, client.top + 48};
+      HBRUSH header_brush = CreateSolidBrush(RGB(243, 243, 243));
+      FillRect(dc, &header_rect, header_brush);
+      DeleteObject(header_brush);
+
+      // Header divider line (#E5E5E5)
+      RECT divider = {client.left, client.top + 47, client.right, client.top + 48};
+      HBRUSH divider_brush = CreateSolidBrush(RGB(229, 229, 229));
+      FillRect(dc, &divider, divider_brush);
+      DeleteObject(divider_brush);
+
+      SetBkMode(dc, TRANSPARENT);
+
+      HFONT header_font = CreateFontW(18, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                                     DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                     CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+      HFONT old_font = static_cast<HFONT>(SelectObject(dc, header_font));
+
+      SetTextColor(dc, RGB(27, 27, 27));
+      wchar_t title[256]{};
+      GetWindowTextW(window, title, 256);
+      RECT header_text_rect = {client.left + 20, client.top + 10, client.right - 20, client.top + 38};
+      DrawTextW(dc, title, -1, &header_text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+      SelectObject(dc, old_font);
+      DeleteObject(header_font);
+
+      HFONT body_font = CreateFontW(15, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+                                   DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                                   CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+      SelectObject(dc, body_font);
+      SetTextColor(dc, RGB(90, 90, 90));
+
+      const int width = client.right - client.left;
+      const int height = client.bottom - client.top;
+      std::wstring text = std::format(
+          L"WinUI 3 Test Canvas\n\nDimensions: {} \u00d7 {} px\nStatus: Active Stress Test Target",
+          width, height);
+      RECT body_rect = {client.left + 24, client.top + 70, client.right - 24, client.bottom - 24};
+      DrawTextW(dc, text.c_str(), -1, &body_rect, DT_LEFT | DT_TOP | DT_WORDBREAK);
+
+      SelectObject(dc, old_font);
+      DeleteObject(body_font);
+
+      EndPaint(window, &paint);
+      return 0;
+    }
+    case WM_ERASEBKGND:
+      return 1;
+    default:
+      return DefWindowProcW(window, message, w_param, l_param);
+  }
+}
+
+void RegisterStressTestWindowClass() {
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  WNDCLASSEXW wc{};
+  wc.cbSize = sizeof(wc);
+  wc.style = CS_HREDRAW | CS_VREDRAW;
+  wc.lpfnWndProc = StressTestWindowProc;
+  wc.hInstance = instance;
+  wc.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
+  wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+  wc.lpszClassName = kStressTestWindowClass;
+  RegisterClassExW(&wc);
+}
+
+}  // namespace
+
 bool ApplicationRuntime::HasActiveAnimationRuns() const {
   return std::any_of(runs_.begin(), runs_.end(),
                      [](const runtime::AnimationRun& run) { return run.overlay.active(); });
 }
 
+void ApplicationRuntime::DestroyStressTestWindows() {
+  for (HWND window : stress_test_windows_) {
+    if (window != nullptr && IsWindow(window)) {
+      snapshot_cache_.Restore().erase(window);
+      snapshot_cache_.PreMinimize().erase(window);
+      DestroyWindow(window);
+    }
+  }
+  stress_test_windows_.clear();
+  stress_test_expected_iconic_.clear();
+}
+
+void ApplicationRuntime::SetStressTestWindowState(HWND window, bool minimized) {
+  if (!IsWindow(window)) return;
+  if (minimized) {
+    if (IsIconic(window)) ShowWindow(window, SW_RESTORE);
+    // This is a new explicit test command, not the delayed duplicate callback which the
+    // post-restore guard is designed to absorb.
+    minimize_suppressed_until_.erase(window);
+    // Stress windows belong to this process, so WINEVENT_SKIPOWNPROCESS deliberately excludes
+    // them. Drive the exact production feature path directly; it captures, animates and issues
+    // the native minimize itself instead of testing only a raw ShowWindow call.
+    if (!OnMinimizeStart(window)) ShowWindow(window, SW_MINIMIZE);
+  } else if (!OnRestoreAttempt(window)) {
+    ShowWindow(window, SW_RESTORE);
+  }
+}
+
 bool ApplicationRuntime::RunStressTest() {
   if (stress_test_report_.active) return false;
 
+  DestroyStressTestWindows();
+  RegisterStressTestWindowClass();
+
+  HMONITOR monitor = MonitorFromWindow(settings_window_.hwnd(), MONITOR_DEFAULTTONEAREST);
+  MONITORINFO info{};
+  info.cbSize = sizeof(info);
+  if (!GetMonitorInfoW(monitor, &info)) {
+    info.rcWork = RECT{100, 100, 1800, 1000};
+  }
+  const RECT& work = info.rcWork;
+  const int work_w = std::max(800, static_cast<int>(work.right - work.left));
+  const int work_h = std::max(600, static_cast<int>(work.bottom - work.top));
+
+  struct WindowSpec {
+    std::wstring title;
+    int width;
+    int height;
+    float rel_x;
+    float rel_y;
+  };
+
+  const WindowSpec specs[] = {
+      {L"WinUI Test Window #1", 640, 420, 0.04f, 0.06f},
+      {L"WinUI Test Window #2", 820, 520, 0.30f, 0.08f},
+      {L"WinUI Test Window #3", 540, 360, 0.08f, 0.46f},
+      {L"WinUI Test Window #4", 760, 460, 0.40f, 0.34f},
+      {L"WinUI Test Window #5", 680, 480, 0.18f, 0.22f},
+      {L"WinUI Test Window #6", 580, 400, 0.52f, 0.16f},
+  };
+
+  const HINSTANCE instance = GetModuleHandleW(nullptr);
+  for (std::size_t i = 0; i < std::size(specs); ++i) {
+    const auto& spec = specs[i];
+    const int x = work.left + static_cast<int>(work_w * spec.rel_x);
+    const int y = work.top + static_cast<int>(work_h * spec.rel_y);
+    HWND window = CreateWindowExW(
+        WS_EX_APPWINDOW, kStressTestWindowClass, spec.title.c_str(),
+        WS_OVERLAPPEDWINDOW, x, y, spec.width, spec.height,
+        nullptr, nullptr, instance, nullptr);
+    if (window != nullptr) {
+      ShowWindow(window, SW_SHOWNORMAL);
+      UpdateWindow(window);
+      stress_test_windows_.push_back(window);
+    }
+  }
+
+  if (stress_test_windows_.empty()) {
+    core::LogDebug(L"Diagnostics", L"Failed to create custom stress test windows.");
+    return false;
+  }
+
+  // Establish the leak baseline after first-use capture allocations. D3D/DXGI commonly retain
+  // their initial texture heaps for reuse; counting that one-time warm-up as a leak produced the
+  // repeatable +40..+60 MB false failure even though process RAM stayed flat.
+  if (desktop_capture_ != nullptr) {
+    for (HWND window : stress_test_windows_) {
+      const auto bounds = platform::GetExtendedFrameBounds(window);
+      if (!bounds.has_value()) continue;
+      rendering::CapturedTexture warmed_texture;
+      RECT warmed_bounds{};
+      (void)desktop_capture_->CaptureWindow(window, *bounds, &warmed_texture, &warmed_bounds);
+    }
+    DwmFlush();
+  }
   const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
   stress_test_report_ = features::StressTestReport{};
   stress_test_report_.active = true;
-  stress_test_report_.target_cycles = 50;
+  stress_test_report_.target_cycles = 60;
   stress_test_report_.current_cycle = 0;
   stress_test_report_.current_step = 0;
   stress_test_report_.start_vram_bytes = mem.vram_bytes;
@@ -512,11 +691,17 @@ bool ApplicationRuntime::RunStressTest() {
   stress_test_report_.start_ram_bytes = mem.ram_bytes;
   stress_test_report_.current_ram_bytes = mem.ram_bytes;
   stress_test_report_.deadlocks_detected = 0;
-  stress_test_report_.last_log = "Automated Stress Test initiated: 50 cycles scheduled...";
-  stress_test_report_.summary = "Running automated 50-cycle stress test...";
+  stress_test_report_.last_log = std::format(
+      "Automated Stress Test initiated: Created {} custom WinUI test windows...",
+      stress_test_windows_.size());
+  stress_test_report_.summary =
+      "Running 60-cycle suite: resize, burst, all-window, cross-phase and focus patterns.";
 
   stress_test_last_step_ms_ = GetTickCount64();
-  core::LogDebug(L"Diagnostics", L"Automated 50-cycle Stress Test Mode started.");
+  stress_test_step_started_ms_ = 0;
+  stress_test_settle_started_ms_ = 0;
+  stress_test_expected_iconic_.clear();
+  core::LogDebug(L"Diagnostics", L"60-cycle stress suite started on custom test windows.");
   return true;
 }
 
@@ -524,8 +709,48 @@ void ApplicationRuntime::UpdateStressTest() {
   if (!stress_test_report_.active) return;
 
   const ULONGLONG now = GetTickCount64();
+  const auto finding = [this](std::string text) {
+    if (stress_test_report_.findings.size() < 48) stress_test_report_.findings.push_back(std::move(text));
+  };
 
-  // Watchdog: detect stuck run (> 4000ms in bulk action without finishing)
+  // A posted minimize/restore is not a pass. Once animations settle, verify every requested
+  // HWND reached the target state and that restored windows no longer carry Minimize state.
+  if (!stress_test_expected_iconic_.empty() && !HasActiveAnimationRuns() &&
+      bulk_window_action_ == BulkWindowAction::kNone) {
+    if (now - stress_test_settle_started_ms_ < 350) return;
+    for (const auto& [window, expected_iconic] : stress_test_expected_iconic_) {
+      ++stress_test_report_.windows_processed;
+      if (!IsWindow(window)) {
+        ++stress_test_report_.invalid_windows;
+        ++stress_test_report_.assertions_failed;
+        finding("FAIL: test window was destroyed before it could be verified");
+        continue;
+      }
+      const bool iconic = IsIconic(window) != FALSE;
+      const bool stale_state = !expected_iconic &&
+          platform::windows::properties::HasMinimizeState(window);
+      if (iconic != expected_iconic || stale_state) {
+        ++stress_test_report_.state_mismatches;
+        ++stress_test_report_.assertions_failed;
+        finding(std::format("FAIL: HWND {} expected {}, got {}{}",
+                            reinterpret_cast<std::uintptr_t>(window),
+                            expected_iconic ? "minimized" : "restored",
+                            iconic ? "minimized" : "restored",
+                            stale_state ? " with leaked Minimize state" : ""));
+      } else {
+        ++stress_test_report_.assertions_passed;
+      }
+    }
+    stress_test_expected_iconic_.clear();
+    stress_test_settle_started_ms_ = 0;
+    stress_test_step_started_ms_ = 0;
+    // Start the inter-phase delay when the previous animations actually completed. Measuring
+    // from the request time launched the next minimize inside the 150 ms restore-suppression
+    // window and caused the exact repeated "expected minimized, got restored" failures.
+    stress_test_last_step_ms_ = now;
+  }
+
+  // Watchdog: detect stuck run (> 4000ms without finishing)
   if (bulk_window_action_ != BulkWindowAction::kNone &&
       bulk_window_request_started_ms_ > 0 &&
       (now - bulk_window_request_started_ms_) > 4000) {
@@ -538,22 +763,55 @@ void ApplicationRuntime::UpdateStressTest() {
 
   // Wait for previous bulk action or overlay animations to finish
   if (bulk_window_action_ != BulkWindowAction::kNone || HasActiveAnimationRuns()) {
+    if (stress_test_step_started_ms_ != 0 && now - stress_test_step_started_ms_ > 7000) {
+      ++stress_test_report_.animation_timeouts;
+      ++stress_test_report_.assertions_failed;
+      finding("FAIL: animation did not settle within 7 seconds");
+      for (int index = 0; index < static_cast<int>(runs_.size()); ++index) {
+        if (runs_[index].overlay.active() || runs_[index].animating_window != nullptr) {
+          CleanupRun(index, RunCleanupOutcome::kAborted);
+        }
+      }
+      bulk_window_action_ = BulkWindowAction::kNone;
+      bulk_window_queue_.clear();
+      prepared_bulk_captures_.clear();
+      bulk_window_in_flight_ = nullptr;
+      bulk_window_request_started_ms_ = 0;
+      HealLeftoverWindows();
+      stress_test_step_started_ms_ = 0;
+      core::LogDebug(L"Diagnostics", L"Stress test animation timeout detected.");
+    }
     return;
   }
 
-  // Throttle 100ms between step triggers to allow windows to settle
-  if (now - stress_test_last_step_ms_ < 100) {
+  // Leave a margin above the 150 ms delayed-minimize suppression window.
+  if (now - stress_test_last_step_ms_ < 250) {
     return;
   }
   stress_test_last_step_ms_ = now;
 
   const int total_steps = stress_test_report_.target_cycles * 2;
   if (stress_test_report_.current_step >= total_steps) {
-    // Stress test completed!
+    if (!stress_test_report_.finalizing) {
+      stress_test_report_.finalizing = true;
+      for (HWND window : stress_test_windows_) {
+        if (IsWindow(window)) {
+          ShowWindow(window, SW_RESTORE);
+          stress_test_expected_iconic_[window] = false;
+          ++stress_test_report_.actions_requested;
+        }
+      }
+      stress_test_settle_started_ms_ = now;
+      stress_test_report_.last_log = "Final cleanup: restoring and verifying every stress window...";
+      return;
+    }
+    // Stress test completed! Clean up custom test windows
+    stress_test_report_.active = false;
+    DestroyStressTestWindows();
+    DwmFlush();
     const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
     stress_test_report_.current_vram_bytes = mem.vram_bytes;
     stress_test_report_.current_ram_bytes = mem.ram_bytes;
-    stress_test_report_.active = false;
 
     const double vram_leak_mb =
         static_cast<double>(static_cast<long long>(mem.vram_bytes) -
@@ -562,34 +820,154 @@ void ApplicationRuntime::UpdateStressTest() {
     const double peak_vram_mb =
         static_cast<double>(stress_test_report_.peak_vram_bytes) / (1024.0 * 1024.0);
 
-    const std::string status = (vram_leak_mb <= 1.0 && stress_test_report_.deadlocks_detected == 0)
-                                    ? "PASSED (0 VRAM Leaks, 0 Deadlocks)"
-                                    : "PASSED WITH WARNINGS";
+    const double ram_delta_mb =
+        static_cast<double>(static_cast<long long>(mem.ram_bytes) -
+                            static_cast<long long>(stress_test_report_.start_ram_bytes)) /
+        (1024.0 * 1024.0);
+    if (vram_leak_mb > 8.0) {
+      ++stress_test_report_.assertions_failed;
+      finding(std::format("FAIL: VRAM grew by {:+.2f} MB (limit: +8.00 MB)", vram_leak_mb));
+    } else {
+      ++stress_test_report_.assertions_passed;
+    }
+    if (ram_delta_mb > 64.0) {
+      ++stress_test_report_.assertions_failed;
+      finding(std::format("FAIL: RAM grew by {:+.2f} MB (limit: +64.00 MB)", ram_delta_mb));
+    } else {
+      ++stress_test_report_.assertions_passed;
+    }
+    const std::string status = stress_test_report_.assertions_failed == 0 ? "PASSED" : "FAILED";
 
     stress_test_report_.summary = std::format(
-        "STRESS TEST COMPLETE (50/50 Cycles)\n"
+        "STRESS TEST COMPLETE (60/60 cycles)\n"
         "Result: {}\n"
-        "Net VRAM Leak: {:+.2f} MB\n"
+        "Actions requested: {} | windows verified: {}\n"
+        "Assertions: {} passed, {} failed\n"
+        "State mismatches: {} | animation timeouts: {} | invalid windows: {}\n"
+        "Net VRAM: {:+.2f} MB | Net RAM: {:+.2f} MB\n"
         "Peak VRAM Usage: {:.2f} MB\n"
         "Deadlocks Detected: {}",
-        status, vram_leak_mb, peak_vram_mb, stress_test_report_.deadlocks_detected);
+        status, stress_test_report_.actions_requested, stress_test_report_.windows_processed,
+        stress_test_report_.assertions_passed, stress_test_report_.assertions_failed,
+        stress_test_report_.state_mismatches, stress_test_report_.animation_timeouts,
+        stress_test_report_.invalid_windows, vram_leak_mb, ram_delta_mb, peak_vram_mb,
+        stress_test_report_.deadlocks_detected);
 
     stress_test_report_.last_log = std::format("[Finished] {}", status);
     core::LogDebug(L"Diagnostics", L"Automated Stress Test completed successfully.");
     return;
   }
 
-  const int step = stress_test_report_.current_step;
-  const bool minimize_phase = (step % 2 == 0);
-  stress_test_report_.current_cycle = (step / 2) + 1;
+  if (stress_test_windows_.empty()) {
+    stress_test_report_.active = false;
+    return;
+  }
 
-  if (minimize_phase) {
-    StartBulkWindowAction(BulkWindowAction::kMinimize);
+  const int step = stress_test_report_.current_step;
+  stress_test_report_.current_cycle = (step / 2) + 1;
+  const bool minimize_phase = (step % 2 == 0);
+  const std::size_t num_windows = stress_test_windows_.size();
+  const int cycle = step / 2;
+
+  HMONITOR monitor = MonitorFromWindow(settings_window_.hwnd(), MONITOR_DEFAULTTONEAREST);
+  MONITORINFO info{};
+  info.cbSize = sizeof(info);
+  if (!GetMonitorInfoW(monitor, &info)) {
+    info.rcWork = RECT{100, 100, 1800, 1000};
+  }
+  const RECT& work = info.rcWork;
+  const int work_w = std::max(600, static_cast<int>(work.right - work.left));
+  const int work_h = std::max(400, static_cast<int>(work.bottom - work.top));
+
+  std::string pattern_description;
+
+  const int mode = cycle % 5;
+  if (!minimize_phase) {
+    // Each cycle ends with a full recovery sweep. This makes the next minimize pattern start
+    // from a known state instead of treating a delayed restore as a failed minimize command.
+    for (HWND hwnd : stress_test_windows_) SetStressTestWindowState(hwnd, false);
+    pattern_description = "Full Recovery Sweep (all stress windows)";
+  } else if (mode == 0) {
+    // Mode 0: Position & Size Shuffle + Action on 2 windows
+    pattern_description = "Position/Size Shuffle & ";
+    for (std::size_t i = 0; i < 2; ++i) {
+      const std::size_t idx = (cycle + i) % num_windows;
+      HWND hwnd = stress_test_windows_[idx];
+      if (hwnd != nullptr && IsWindow(hwnd)) {
+        const int seed = cycle * 17 + static_cast<int>(i) * 31;
+        const int new_w = 480 + ((seed * 73 + 17) % 360);
+        const int new_h = 340 + ((seed * 37 + 23) % 260);
+        const int new_x = work.left + ((seed * 113 + 41) % std::max(100, work_w - new_w));
+        const int new_y = work.top + ((seed * 97 + 59) % std::max(100, work_h - new_h));
+        SetWindowPos(hwnd, nullptr, new_x, new_y, new_w, new_h, SWP_NOZORDER | SWP_NOACTIVATE);
+
+        SetStressTestWindowState(hwnd, minimize_phase);
+      }
+    }
+    pattern_description += minimize_phase ? "Minimize 2 Windows" : "Restore 2 Windows";
+  } else if (mode == 1) {
+    // Mode 1: Simultaneous Multi-Window Burst (3 windows at once)
+    const std::size_t start_idx = (cycle * 2) % num_windows;
+    for (std::size_t i = 0; i < 3 && i < num_windows; ++i) {
+      const std::size_t idx = (start_idx + i) % num_windows;
+      HWND hwnd = stress_test_windows_[idx];
+      if (hwnd != nullptr && IsWindow(hwnd)) {
+        SetStressTestWindowState(hwnd, minimize_phase);
+      }
+    }
+    pattern_description = std::format("Simultaneous Burst {} (3 Windows)", minimize_phase ? "Minimize" : "Restore");
+  } else if (mode == 2) {
+    // Mode 2: ALL Windows Simultaneously (Bulk)
+    for (HWND hwnd : stress_test_windows_) {
+      if (hwnd != nullptr && IsWindow(hwnd)) {
+        SetStressTestWindowState(hwnd, minimize_phase);
+      }
+    }
+    pattern_description = std::format("ALL Windows {} Simultaneously", minimize_phase ? "Minimize" : "Restore");
+  } else if (mode == 3) {
+    // Mode 3: Mixed Cross-Phase (Restore half while minimizing half)
+    for (std::size_t i = 0; i < num_windows; ++i) {
+      HWND hwnd = stress_test_windows_[i];
+      if (hwnd != nullptr && IsWindow(hwnd)) {
+        SetStressTestWindowState(hwnd, i % 2 == static_cast<std::size_t>(step % 2));
+      }
+    }
+    pattern_description = "Cross-Phase Mixed Multi-Window Swap";
   } else {
-    StartBulkWindowAction(BulkWindowAction::kRestore);
+    // Mode 4: Single Window Rapid Focus
+    const std::size_t target_idx = cycle % num_windows;
+    HWND hwnd = stress_test_windows_[target_idx];
+    if (hwnd != nullptr && IsWindow(hwnd)) {
+      SetStressTestWindowState(hwnd, minimize_phase);
+      if (!minimize_phase) SetForegroundWindow(hwnd);
+    }
+    pattern_description = std::format("Single Window #{} Focus {}", target_idx + 1, minimize_phase ? "Minimize" : "Restore");
+  }
+
+  const auto expect = [this](HWND window, bool iconic) {
+    if (window != nullptr && IsWindow(window)) {
+      stress_test_expected_iconic_[window] = iconic;
+      ++stress_test_report_.actions_requested;
+    }
+  };
+  if (!minimize_phase) {
+    for (HWND window : stress_test_windows_) expect(window, false);
+  } else if (mode == 0) {
+    for (std::size_t i = 0; i < 2; ++i) expect(stress_test_windows_[(cycle + i) % num_windows], minimize_phase);
+  } else if (mode == 1) {
+    const std::size_t start = (cycle * 2) % num_windows;
+    for (std::size_t i = 0; i < 3 && i < num_windows; ++i) expect(stress_test_windows_[(start + i) % num_windows], minimize_phase);
+  } else if (mode == 2) {
+    for (HWND window : stress_test_windows_) expect(window, minimize_phase);
+  } else if (mode == 3) {
+    for (std::size_t i = 0; i < num_windows; ++i) expect(stress_test_windows_[i], i % 2 == static_cast<std::size_t>(step % 2));
+  } else {
+    expect(stress_test_windows_[cycle % num_windows], minimize_phase);
   }
 
   stress_test_report_.current_step++;
+  stress_test_step_started_ms_ = now;
+  stress_test_settle_started_ms_ = now;
 
   const auto mem = GetMemoryUsageSnapshot(d3d_device_.get());
   stress_test_report_.current_vram_bytes = mem.vram_bytes;
@@ -605,9 +983,9 @@ void ApplicationRuntime::UpdateStressTest() {
       (1024.0 * 1024.0);
 
   stress_test_report_.last_log = std::format(
-      "[Cycle {}/50] {} | VRAM: {:.2f} MB (Delta: {:+.2f} MB) | Deadlocks: {}",
-      stress_test_report_.current_cycle, (minimize_phase ? "Minimize" : "Restore"), vram_mb,
-      vram_delta_mb, stress_test_report_.deadlocks_detected);
+      "[Cycle {}/60] {} | {} state assertions queued | VRAM: {:.2f} MB (Delta: {:+.2f} MB)",
+      stress_test_report_.current_cycle, pattern_description, stress_test_expected_iconic_.size(),
+      vram_mb, vram_delta_mb);
 }
 #endif
 

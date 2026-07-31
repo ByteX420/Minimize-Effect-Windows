@@ -215,6 +215,7 @@
     <ClCompile Include="src\ui\pages\applications_page.cpp" />
     <ClCompile Include="src\ui\pages\displays_page.cpp" />
     <ClCompile Include="src\ui\pages\diagnostics_page.cpp" />
+    <ClCompile Include="src\ui\pages\stress_test_page.cpp" />
     <ClCompile Include="src\ui\pages\general_page.cpp" />
     <ClCompile Include="src\ui\pages\hotkeys_page.cpp" />
     <ClCompile Include="src\ui\pages\windows_integration_page.cpp" />
