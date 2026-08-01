@@ -105,8 +105,14 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
     clean_excluded();
     return false;
   }
+  const bool has_managed_state =
+      snapshots_.Restore().count(window) != 0 ||
+      platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
+      platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kMovedOffscreen);
   if (recovery_.restoring() || window == context.overlay ||
-      !platform::IsInterestingTopLevelWindow(window, context.overlay)) {
+      (!has_managed_state && !platform::IsInterestingTopLevelWindow(window, context.overlay))) {
     return false;
   }
 
