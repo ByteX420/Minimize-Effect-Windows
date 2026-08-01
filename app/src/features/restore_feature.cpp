@@ -139,7 +139,7 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
     context.set_state(run_index, runtime::RunState::kRestoring);
     run.live_animation_capture_enabled = false;
     if (IsIconic(window) == FALSE) {
-      platform::SetWindowCloaked(window, true);
+      (void)platform::SetWindowCloaked(window, true);
       (void)platform::windows::properties::MakeTransparent(window);
       if (!moved_offscreen) {
         runtime::CachedSnapshot* snapshot = has_snapshot ? &snapshot_iterator->second : nullptr;
@@ -164,7 +164,7 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
   if (!transaction.has_value()) return false;
 
   if (!window_is_iconic && !moved_offscreen) {
-    platform::SetWindowCloaked(window, true);
+    (void)platform::SetWindowCloaked(window, true);
     (void)platform::windows::properties::MakeTransparent(window);
     runtime::CachedSnapshot* snapshot = has_snapshot ? &snapshot_iterator->second : nullptr;
     if (!PreservePlacementAndMarkOffscreen(window, snapshot)) {
@@ -172,7 +172,7 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
       return false;
     }
   } else if (!window_is_iconic && moved_offscreen) {
-    platform::SetWindowCloaked(window, true);
+    (void)platform::SetWindowCloaked(window, true);
     (void)platform::windows::properties::MakeTransparent(window);
   }
 

@@ -3,11 +3,18 @@
 #include "platform/windows/window_state.hpp"
 
 #include <array>
+#include <cstdint>
 #include <dwmapi.h>
+#include <iostream>
+#include <sstream>
 #include <string_view>
+
+#include "core/logger.hpp"
 
 namespace minimize::platform {
 namespace {
+
+constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeSetWindowCloak";
 
 bool IsExcludedClassName(std::wstring_view class_name) {
   constexpr std::array<std::wstring_view, 8> kExcludedClassNames = {
@@ -106,10 +113,34 @@ void SetDwmTransitionsDisabled(HWND window, bool disabled) {
   DwmSetWindowAttribute(window, DWMWA_TRANSITIONS_FORCEDISABLED, &value, sizeof(value));
 }
 
-void SetWindowCloaked(HWND window, bool cloaked) {
-  if (!IsWindow(window)) return;
+bool SetWindowCloaked(HWND window, bool cloaked) {
+  if (!IsWindow(window)) return false;
   const BOOL value = cloaked ? TRUE : FALSE;
-  DwmSetWindowAttribute(window, DWMWA_CLOAKED, &value, sizeof(value));
+  const HRESULT direct_result =
+      DwmSetWindowAttribute(window, DWMWA_CLOAK, &value, sizeof(value));
+  if (SUCCEEDED(direct_result)) return true;
+
+  const UINT cloak_message = RegisterWindowMessageW(kSetWindowCloakMessageName);
+  DWORD_PTR ignored_result = 0;
+  constexpr UINT kCloakMessageTimeoutMs = 75;
+  if (cloak_message != 0 &&
+      SendMessageTimeoutW(window, cloak_message, cloaked ? 1 : 0, 0,
+                          SMTO_ABORTIFHUNG | SMTO_BLOCK, kCloakMessageTimeoutMs,
+                          &ignored_result) != 0) {
+    BOOL actual_cloaked = FALSE;
+    const HRESULT query_result =
+        DwmGetWindowAttribute(window, DWMWA_CLOAKED, &actual_cloaked, sizeof(actual_cloaked));
+    if (SUCCEEDED(query_result) && (actual_cloaked != FALSE) == cloaked) return true;
+  }
+
+  std::wostringstream message;
+  message << L"Unable to " << (cloaked ? L"cloak" : L"uncloak")
+          << L" window through DWM or target-process hook hwnd=0x" << std::hex
+          << reinterpret_cast<std::uintptr_t>(window) << L" direct HRESULT=0x"
+          << static_cast<unsigned long>(direct_result);
+  core::LogDebug(L"WindowState", message.str());
+  std::wcerr << message.str() << L'\n';
+  return false;
 }
 
 bool SetOwnedWindowRegion(HWND window, HRGN region, bool redraw) {

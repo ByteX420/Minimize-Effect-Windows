@@ -14,11 +14,14 @@ public:
 
   [[nodiscard]] bool Install();
   void Uninstall();
-  [[nodiscard]] bool IsInstalled() const { return hook_ != nullptr; }
+  [[nodiscard]] bool IsInstalled() const {
+    return hook_ != nullptr && call_window_hook_ != nullptr;
+  }
 
 private:
   HMODULE library_ = nullptr;
   HHOOK hook_ = nullptr;
+  HHOOK call_window_hook_ = nullptr;
 };
 
 }  // namespace minimize::platform::windows

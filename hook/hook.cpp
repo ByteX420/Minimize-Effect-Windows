@@ -1,6 +1,7 @@
 #include <format>
 #include <iterator>
 #include <string_view>
+#include <dwmapi.h>
 #include <windows.h>
 
 #include "../app/src/core/logger.hpp"
@@ -10,6 +11,7 @@ namespace {
 
 constexpr wchar_t kOverlayMessageName[] = L"MinimizeMinimizeAttempt";
 constexpr wchar_t kRestoreMessageName[] = L"MinimizeRestoreAttempt";
+constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeSetWindowCloak";
 constexpr wchar_t kOverlayClassName[] = L"MinimizeEffectOverlayWindow";
 
 [[nodiscard]] constexpr bool IsMinimizeCommand(int show_cmd) noexcept {
@@ -160,5 +162,25 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
     // Prevent any C++ exception from crossing exported extern "C" DLL boundary
   }
 
+  return CallNextHookEx(nullptr, code, w_param, l_param);
+}
+
+extern "C" __declspec(dllexport) LRESULT CALLBACK CallWndProc(int code, WPARAM w_param,
+                                                              LPARAM l_param) noexcept {
+  (void)w_param;
+  if (code >= 0 && l_param != 0) {
+    const auto* message = reinterpret_cast<const CWPSTRUCT*>(l_param);
+    const UINT set_window_cloak_message = RegisterWindowMessageW(kSetWindowCloakMessageName);
+    if (set_window_cloak_message != 0 && message->message == set_window_cloak_message &&
+        message->hwnd != nullptr) {
+      const BOOL cloaked = message->wParam != 0 ? TRUE : FALSE;
+      const HRESULT result =
+          DwmSetWindowAttribute(message->hwnd, DWMWA_CLOAK, &cloaked, sizeof(cloaked));
+      if (FAILED(result)) {
+        minimize::core::LogDebug(
+            L"HookDLL", L"DwmSetWindowAttribute(DWMWA_CLOAK) failed in target process");
+      }
+    }
+  }
   return CallNextHookEx(nullptr, code, w_param, l_param);
 }

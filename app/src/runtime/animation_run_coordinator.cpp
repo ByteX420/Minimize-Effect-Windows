@@ -338,7 +338,6 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
   power_status_monitor_.Stop();
   UnregisterAllHotkeys();
   effect_controller_.Stop();
-  cbt_hook_manager_.Uninstall();
   native_animation_blocker_.Disable();
 
   // Post WM_QUIT so the main message loop exits if it's still running.
@@ -398,6 +397,7 @@ void ApplicationRuntime::CleanupAndRestoreAll() {
 
   // Safety net: any remaining tracked Minimize windows, still without SW_RESTORE.
   window_recovery_service_.HealUntrackedWindows();
+  cbt_hook_manager_.Uninstall();
   platform::windows::properties::ClearAllState();
   runs_.ShutdownOverlays();
 #ifdef _DEBUG

@@ -288,7 +288,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
             std::wcerr << L"Minimize minimize event timeout before native minimize completed; "
                           L"aborting animation.\n";
             if (stalled_window != nullptr && IsWindow(stalled_window)) {
-              platform::SetWindowCloaked(stalled_window, false);
+              (void)platform::SetWindowCloaked(stalled_window, false);
               platform::windows::properties::RestoreTransparency(stalled_window);
               platform::windows::properties::ClearMinimizeState(stalled_window);
               native_animation_blocker_.SetTransitionsDisabledForWindow(stalled_window, false);
@@ -485,7 +485,6 @@ void ApplicationRuntime::DisableEffectRuntime() {
   for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
     FinishActiveAnimation(i);
   }
-  cbt_hook_manager_.Uninstall();
   native_animation_blocker_.Disable();
 
   std::vector<HWND> tracked_windows;
@@ -499,6 +498,7 @@ void ApplicationRuntime::DisableEffectRuntime() {
   snapshot_cache_.Restore().clear();
   snapshot_cache_.PreMinimize().clear();
   if (desktop_capture_ != nullptr) desktop_capture_->ClearHistory();
+  cbt_hook_manager_.Uninstall();
   effect_runtime_active_ = false;
 }
 

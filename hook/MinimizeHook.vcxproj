@@ -65,7 +65,7 @@
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <ProgramDataBaseFile>$(IntDir)$(TargetName).pdb</ProgramDataBaseFile>
-      <AdditionalDependencies>user32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
       <Command>cmd /c "taskkill /IM MinimizeEffect.exe /T /F &gt;nul 2&gt;nul &amp; if exist &quot;$(OutDir)MinimizeEffectHook.dll&quot; ( move /y &quot;$(OutDir)MinimizeEffectHook.dll&quot; &quot;$(OutDir)MinimizeEffectHook.dll.old&quot; &gt;nul 2&gt;nul &amp; del /f /q &quot;$(OutDir)MinimizeEffectHook.dll.old&quot; &gt;nul 2&gt;nul ) &amp; exit /b 0"</Command>

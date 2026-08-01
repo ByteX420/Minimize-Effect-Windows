@@ -338,7 +338,12 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   }
   snapshots_.PreMinimize().erase(window);
 
-  platform::SetWindowCloaked(window, true);
+  if (!platform::SetWindowCloaked(window, true)) {
+    core::LogDebug(L"Minimize", L"Cloaking failed; falling back to native minimize");
+    transaction->HandOff();
+    context.abort_run(run_index);
+    return false;
+  }
   (void)platform::windows::properties::MakeTransparent(window);
   context.animation_blocker->SetTransitionsDisabledForWindow(window, true);
   platform::windows::properties::StoreOriginalPlacement(window, original_rect);
@@ -387,7 +392,11 @@ bool MinimizeFeature::CommitPreparedBulkMinimize(
     return false;
   }
 
-  platform::SetWindowCloaked(window, true);
+  if (!platform::SetWindowCloaked(window, true)) {
+    core::LogDebug(L"Minimize", L"Bulk cloaking failed; falling back to native minimize");
+    abort(run_index);
+    return false;
+  }
   (void)platform::windows::properties::MakeTransparent(window);
   animation_blocker->SetTransitionsDisabledForWindow(window, true);
   platform::windows::properties::StoreOriginalPlacement(window,
@@ -728,7 +737,7 @@ void MinimizeFeature::CompletePendingNativeMinimize(
   const bool was_maximized =
       snapshot->second.was_maximized || (placement.flags & WPF_RESTORETOMAXIMIZED) != 0;
   platform::windows::properties::StoreWasMaximized(window, was_maximized);
-  platform::SetWindowCloaked(window, true);
+  (void)platform::SetWindowCloaked(window, true);
   (void)platform::windows::properties::MakeTransparent(window);
   platform::windows::properties::SetFlag(
       window, platform::windows::properties::WindowFlag::kMovedOffscreen);

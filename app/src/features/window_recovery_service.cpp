@@ -50,7 +50,7 @@ void WindowRecoveryService::Restore(HWND window, bool force_show_if_iconic, bool
   // Keep the real window alpha-hidden while its restored placement and first composed frame
   // settle. Layered Chromium windows can otherwise expose an incomplete fullscreen frame before
   // the Minimize overlay is removed.
-  platform::SetWindowCloaked(window, false);
+  (void)platform::SetWindowCloaked(window, false);
   RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_FRAME | RDW_ALLCHILDREN);
   DwmFlush();
   platform::windows::properties::ClearMinimizeState(window);
@@ -77,7 +77,7 @@ void WindowRecoveryService::ReleaseWithoutShowing(HWND window, bool finish_as_mi
     platform::SetDwmTransitionsDisabled(window, false);
   }
 
-  platform::SetWindowCloaked(window, false);
+  (void)platform::SetWindowCloaked(window, false);
   platform::windows::properties::RestoreTransparency(window);
   platform::windows::properties::ClearMinimizeState(window);
   restoring_ = false;
@@ -108,7 +108,7 @@ void WindowRecoveryService::HealUntrackedWindows() {
   EnumWindows(
       [](HWND window, LPARAM) -> BOOL {
         if (platform::windows::properties::HasMinimizeState(window)) {
-          platform::SetWindowCloaked(window, false);
+          (void)platform::SetWindowCloaked(window, false);
           platform::windows::properties::RestoreTransparency(window);
           (void)platform::SetOwnedWindowRegion(window, nullptr, true);
           platform::windows::properties::ClearMinimizeState(window);
