@@ -8,7 +8,6 @@
 #include <cstring>
 #include <dxgi1_4.h>
 #include <format>
-#include <future>
 #include <iostream>
 #include <psapi.h>
 #include <string_view>
@@ -207,69 +206,43 @@ void ApplicationRuntime::StartBulkWindowAction(BulkWindowAction action) {
       bool captured = false;
     };
 
-    constexpr std::size_t kMaximumParallelCaptures = 4;
     const auto capture_started = std::chrono::steady_clock::now();
     std::vector<HWND> capture_candidates(bulk_window_queue_.begin(), bulk_window_queue_.end());
-    for (std::size_t offset = 0; offset < capture_candidates.size();
-         offset += kMaximumParallelCaptures) {
-      const std::size_t batch_end =
-          std::min(capture_candidates.size(), offset + kMaximumParallelCaptures);
-      std::vector<std::future<CaptureResult>> captures;
-      captures.reserve(batch_end - offset);
-      for (std::size_t index = offset; index < batch_end; ++index) {
-        const HWND window = capture_candidates[index];
-        if (IsHungAppWindow(window) || window_exclusion_service_.IsExcluded(window)) continue;
-        const auto executable = platform::GetWindowExecutableName(window);
-        if (executable.has_value() && effect_policy_.IsExcluded(*executable)) continue;
+    for (HWND window : capture_candidates) {
+      if (IsHungAppWindow(window) || window_exclusion_service_.IsExcluded(window)) continue;
+      const auto executable = platform::GetWindowExecutableName(window);
+      if (executable.has_value() && effect_policy_.IsExcluded(*executable)) continue;
 
-        std::optional<RECT> requested_bounds = platform::GetExtendedFrameBounds(window);
-        WINDOWPLACEMENT placement{};
-        placement.length = sizeof(placement);
-        const bool maximized =
-            (GetWindowPlacement(window, &placement) && placement.showCmd == SW_SHOWMAXIMIZED) ||
-            IsZoomed(window) != FALSE;
-        if (maximized) {
-          requested_bounds = platform::GetMonitorWorkArea(window, requested_bounds);
-        } else if (requested_bounds.has_value()) {
-          RECT clipped{};
-          const RECT virtual_screen = platform::GetVirtualScreenRect();
-          if (IntersectRect(&clipped, &*requested_bounds, &virtual_screen) &&
-              clipped.right > clipped.left && clipped.bottom > clipped.top) {
-            requested_bounds = clipped;
-          } else {
-            requested_bounds.reset();
-          }
-        }
-        if (!requested_bounds.has_value()) continue;
-
-        try {
-          captures.push_back(
-              std::async(std::launch::async, [this, window, bounds = *requested_bounds] {
-                CaptureResult result{.window = window};
-                result.captured = desktop_capture_->CaptureWindow(
-                    window, bounds, &result.texture, &result.bounds);
-                return result;
-              }));
-        } catch (const std::system_error&) {
-          // Resource pressure can prevent a worker from starting. The normal capture path below
-          // remains available for this window.
+      std::optional<RECT> requested_bounds = platform::GetExtendedFrameBounds(window);
+      WINDOWPLACEMENT placement{};
+      placement.length = sizeof(placement);
+      const bool maximized =
+          (GetWindowPlacement(window, &placement) && placement.showCmd == SW_SHOWMAXIMIZED) ||
+          IsZoomed(window) != FALSE;
+      if (maximized) {
+        requested_bounds = platform::GetMonitorWorkArea(window, requested_bounds);
+      } else if (requested_bounds.has_value()) {
+        RECT clipped{};
+        const RECT virtual_screen = platform::GetVirtualScreenRect();
+        if (IntersectRect(&clipped, &*requested_bounds, &virtual_screen) &&
+            clipped.right > clipped.left && clipped.bottom > clipped.top) {
+          requested_bounds = clipped;
+        } else {
+          requested_bounds.reset();
         }
       }
-      for (auto& capture : captures) {
-        CaptureResult result;
-        try {
-          result = capture.get();
-        } catch (...) {
-          continue;
-        }
-        if (!result.captured || result.texture.shader_resource_view == nullptr) continue;
-        prepared_bulk_captures_.insert_or_assign(
-            result.window,
-            PreparedBulkCapture{
-                .texture = std::move(result.texture),
-                .bounds = result.bounds,
-            });
-      }
+      if (!requested_bounds.has_value()) continue;
+
+      CaptureResult result{.window = window};
+      result.captured = desktop_capture_->CaptureWindow(
+          window, *requested_bounds, &result.texture, &result.bounds);
+      if (!result.captured || result.texture.shader_resource_view == nullptr) continue;
+      prepared_bulk_captures_.insert_or_assign(
+          result.window,
+          PreparedBulkCapture{
+              .texture = std::move(result.texture),
+              .bounds = result.bounds,
+          });
     }
     const float capture_duration =
         std::chrono::duration<float, std::milli>(std::chrono::steady_clock::now() -
