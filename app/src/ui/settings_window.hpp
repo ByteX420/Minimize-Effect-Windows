@@ -143,6 +143,8 @@ private:
   ui::AnimationPreview animation_preview_;
   ui::ApplicationListProvider application_list_provider_;
   ui::TrayIcon tray_icon_;
+  bool titlebar_dragging_ = false;
+  POINT titlebar_drag_offset_{};
   bool render_requested_ = false;
   ULONGLONG shown_at_ms_ = 0;
   // Gates deferred startup work until window/sidebar/page enter animations finish.

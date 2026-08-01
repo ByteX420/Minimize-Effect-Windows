@@ -13,6 +13,15 @@ constexpr float kHeaderHeight = theme::Metrics::kTitlebarHeight;
 constexpr UINT kShowSettingsMessage = WM_APP + 101;
 constexpr int kHotkeyBaseId = 4100;
 
+bool IsTitlebarDragRegion(HWND window, POINT point, float scale) {
+  RECT client{};
+  GetClientRect(window, &client);
+  const LONG traffic_lights_end = static_cast<LONG>(140.0f * scale);
+  const LONG header_actions_start = client.right - static_cast<LONG>(220.0f * scale);
+  return point.y >= 0 && point.y < static_cast<LONG>(kHeaderHeight * scale) &&
+         point.x >= traffic_lights_end && point.x < header_actions_start;
+}
+
 }  // namespace
 
 LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_param,
@@ -36,6 +45,57 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
   if (settings != nullptr && message == features::UpdateService::kStateChangedMessage) {
     settings->HandleUpdateStateChanged();
     return 0;
+  }
+
+  // Do not return HTCAPTION for the custom titlebar: the system's modal move loop would block
+  // the runtime loop and freeze active minimize/restore overlays. A captured client drag keeps
+  // normal message pumping and animation ticks alive while the menu is moved.
+  if (settings != nullptr) {
+    switch (message) {
+      case WM_LBUTTONDOWN: {
+        const POINT point{static_cast<short>(LOWORD(l_param)),
+                          static_cast<short>(HIWORD(l_param))};
+        if (!IsTitlebarDragRegion(hwnd, point, scale)) break;
+        POINT cursor{};
+        RECT bounds{};
+        if (GetCursorPos(&cursor) && GetWindowRect(hwnd, &bounds)) {
+          settings->titlebar_dragging_ = true;
+          settings->titlebar_drag_offset_ = {cursor.x - bounds.left, cursor.y - bounds.top};
+          SetCapture(hwnd);
+          settings->ForceRender();
+          return 0;
+        }
+        break;
+      }
+      case WM_MOUSEMOVE: {
+        if (!settings->titlebar_dragging_) break;
+        POINT cursor{};
+        if (GetCursorPos(&cursor)) {
+          SetWindowPos(hwnd, nullptr, cursor.x - settings->titlebar_drag_offset_.x,
+                       cursor.y - settings->titlebar_drag_offset_.y, 0, 0,
+                       SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+        settings->ForceRender();
+        return 0;
+      }
+      case WM_LBUTTONUP:
+        if (!settings->titlebar_dragging_) break;
+        settings->titlebar_dragging_ = false;
+        if (GetCapture() == hwnd) ReleaseCapture();
+        return 0;
+      case WM_CAPTURECHANGED:
+      case WM_CANCELMODE:
+        if (!settings->titlebar_dragging_) break;
+        settings->titlebar_dragging_ = false;
+        return 0;
+      case WM_LBUTTONDBLCLK: {
+        const POINT point{static_cast<short>(LOWORD(l_param)),
+                          static_cast<short>(HIWORD(l_param))};
+        if (!IsTitlebarDragRegion(hwnd, point, scale)) break;
+        ShowWindow(hwnd, IsZoomed(hwnd) != FALSE ? SW_RESTORE : SW_MAXIMIZE);
+        return 0;
+      }
+    }
   }
 
   if (settings != nullptr && settings->editing_hotkey_ >= 0 &&
@@ -217,20 +277,8 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
         settings->HandleCloseRequest();
       }
       return 0;
-    case WM_NCHITTEST: {
-      if (settings == nullptr) return HTCLIENT;
-      POINT point{static_cast<short>(LOWORD(l_param)), static_cast<short>(HIWORD(l_param))};
-      if (!ScreenToClient(hwnd, &point)) return HTCLIENT;
-      RECT client{};
-      GetClientRect(hwnd, &client);
-      const LONG traffic_lights_end = static_cast<LONG>(140.0f * scale);
-      const LONG header_actions_start = client.right - static_cast<LONG>(220.0f * scale);
-      if (point.y >= 0 && point.y < static_cast<LONG>(kHeaderHeight * scale) &&
-          point.x >= traffic_lights_end && point.x < header_actions_start) {
-        return HTCAPTION;
-      }
+    case WM_NCHITTEST:
       return HTCLIENT;
-    }
     default:
       return DefWindowProcW(hwnd, message, w_param, l_param);
   }
