@@ -171,6 +171,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
   } else {
     snapshot_cache_.Restore().erase(window);
     snapshot_cache_.PreMinimize().erase(window);
+    platform::windows::properties::DiscardState(window);
   }
 
   if (slot.overlay.active()) slot.overlay.CancelAnimation();

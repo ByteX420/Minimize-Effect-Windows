@@ -145,6 +145,11 @@ bool HasMinimizeState(HWND window) {
 void ClearMinimizeState(HWND window) {
   if (window == nullptr) return;
   RestoreTransparency(window);
+  DiscardState(window);
+}
+
+void DiscardState(HWND window) {
+  if (window == nullptr) return;
   std::unique_lock lock(g_window_states_mutex);
   g_window_states.erase(window);
 }

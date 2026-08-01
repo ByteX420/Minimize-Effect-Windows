@@ -32,6 +32,7 @@ void SetFlag(HWND window, WindowFlag flag, bool value = true);
 [[nodiscard]] std::uint32_t QueryHookState(HWND window);
 [[nodiscard]] bool HasMinimizeState(HWND window);
 void ClearMinimizeState(HWND window);
+void DiscardState(HWND window);
 void ClearAllState();
 [[nodiscard]] bool MakeTransparent(HWND window);
 void RestoreTransparency(HWND window);
