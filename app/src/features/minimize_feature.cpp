@@ -154,11 +154,23 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   run_index = context.find_available_run();
   if (run_index == -1) return false;
   runtime::AnimationRun& run = runs_[run_index];
-  if (platform::windows::properties::HasFlag(
-          window, platform::windows::properties::WindowFlag::kIsMinimizing)) {
+  const bool minimizing = platform::windows::properties::HasFlag(
+      window, platform::windows::properties::WindowFlag::kIsMinimizing);
+  const auto restore_snapshot = snapshots_.Restore().find(window);
+  if (minimizing) {
     return true;
   }
-  snapshots_.Restore().erase(window);
+  if (restore_snapshot != snapshots_.Restore().end()) {
+    const bool still_minimized = IsIconic(window) != FALSE ||
+        platform::windows::properties::HasFlag(
+            window, platform::windows::properties::WindowFlag::kMovedOffscreen);
+    if (still_minimized) return true;
+
+    // A visible window without Minimize flags is not in a live restore. Keeping its old capture
+    // makes the next minimize look already handled and is exactly what left stress targets—and
+    // normal windows after a raced restore—stuck visible.
+    snapshots_.Restore().erase(restore_snapshot);
+  }
   context.set_state(run_index, runtime::RunState::kCapturing);
 
   struct TopmostRestorer {
