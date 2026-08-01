@@ -49,8 +49,9 @@ void StressTestPage::Render(::minimize::ui::SettingsWindow& window, components::
   if (ui::components::CompactButton(motion, "##run_stress_suite", test.active ? "Running..." : "Run suite",
                                     ImVec2(button_width, button_height), window.font_body_, scale,
                                     alpha, test.active) && !test.active) {
-    const bool started = window.controller_->actions().ExecuteDiagnosticsAction(features::DiagnosticsAction::kStressTest);
-    window.diagnostics_feedback_ = started ? "Stress suite started" : "Could not start stress suite";
+    (void)window.controller_->actions().ExecuteDiagnosticsAction(
+        features::DiagnosticsAction::kStressTest);
+    window.diagnostics_feedback_.clear();
     window.last_diagnostics_refresh_ms_ = 0;
   }
   layout.EndRow();
