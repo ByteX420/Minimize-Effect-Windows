@@ -30,8 +30,8 @@ void HotkeysPage::Render(::minimize::ui::SettingsWindow& window, components::Pag
       "Toggle effect",
       "Open settings",
       "Repair windows",
-      "Minimize all windows",
-      "Restore all minimized windows",
+      "Minimize windows on mouse display",
+      "Restore windows on mouse display",
   };
   const float button_height = ::minimize::ui::theme::Metrics::kButtonHeight * scale;
   layout.BeginGroup();

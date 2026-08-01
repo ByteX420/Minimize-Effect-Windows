@@ -134,6 +134,18 @@ void ApplicationRuntime::StartBulkWindowAction(BulkWindowAction action) {
     core::LogDebug(L"Hotkey", L"Ignored bulk hotkey while the previous animation is still active");
     return;
   }
+
+  POINT cursor{};
+  if (!GetCursorPos(&cursor)) {
+    core::LogDebug(L"Hotkey", L"Could not determine the cursor display for the bulk action");
+    return;
+  }
+  const HMONITOR target_monitor = MonitorFromPoint(cursor, MONITOR_DEFAULTTONEAREST);
+  if (target_monitor == nullptr) {
+    core::LogDebug(L"Hotkey", L"Could not resolve the cursor display for the bulk action");
+    return;
+  }
+
   bulk_hotkey_locked_ = true;
 
   const HWND settings_window = settings_window_.hwnd();
@@ -173,6 +185,12 @@ void ApplicationRuntime::StartBulkWindowAction(BulkWindowAction action) {
 
   for (HWND window : candidates) {
     if (window == settings_window || !IsWindow(window)) continue;
+    if (MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST) != target_monitor) continue;
+    // A display-level Minimize disable must stop the bulk action before it reaches the
+    // fallback path, which would otherwise minimize the window natively.
+    if (action == BulkWindowAction::kMinimize && window_exclusion_service_.IsExcluded(window)) {
+      continue;
+    }
     const bool tracked = FindRunForWindow(window) != -1 ||
                          snapshot_cache_.Restore().count(window) != 0 ||
                          platform::windows::properties::HasMinimizeState(window);
@@ -256,7 +274,8 @@ void ApplicationRuntime::StartBulkWindowAction(BulkWindowAction action) {
   core::LogDebug(L"Hotkey",
                  std::wstring(action == BulkWindowAction::kMinimize ? L"Queued minimize for "
                                                                     : L"Queued restore for ") +
-                     std::to_wstring(bulk_window_queue_.size()) + L" top-level windows");
+                     std::to_wstring(bulk_window_queue_.size()) +
+                     L" top-level windows on the cursor display");
   frame_scheduler_.Wake();
 }
 
