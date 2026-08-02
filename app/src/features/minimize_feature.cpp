@@ -643,6 +643,7 @@ bool MinimizeFeature::TickSeedSnapshotsForIconicWindows() {
     // One message-loop frame so this single restored window can paint.
     DwmFlush();
     seed_phase_ = SeedPhase::kCaptureCurrent;
+    return true;
   }
 
   // kCaptureCurrent — capture then immediately re-minimize this window only.
