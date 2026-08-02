@@ -88,15 +88,25 @@ jobs:
               throw "Missing $versionPath"
             }
             $ver = (Get-Content -Raw -LiteralPath $versionPath).Trim()
-            $match = [regex]::Match($ver, '^(\d+\.\d+\.\d+)-(beta|rc)\.(\d+)$')
+            $match = [regex]::Match($ver, '^(\d+\.\d+\.\d+)-([a-zA-Z0-9.-]+)$')
             if (-not $match.Success) {
-              throw "BETA_VERSION '$ver' must look like 1.5.0-beta.1 or 1.5.0-rc.1"
+              throw "BETA_VERSION '$ver' must be a valid pre-release version like 1.5.0-beta.1, 1.5.0-beta.rc, or 1.5.0-rc.1"
             }
             $baseVersion = $match.Groups[1].Value
-            $channel = $match.Groups[2].Value
-            $iteration = [int]$match.Groups[3].Value
-            if ($iteration -lt 1 -or $iteration -gt 65535) {
-              throw "Pre-release number must be between 1 and 65535"
+            $prereleaseTag = $match.Groups[2].Value
+            if ($prereleaseTag -match 'rc') {
+              $channel = "rc"
+            } else {
+              $channel = ($prereleaseTag -split '[.-]')[0]
+            }
+            $iterationMatch = [regex]::Match($prereleaseTag, '(?:^|\.|\D)(\d+)$')
+            if ($iterationMatch.Success) {
+              $iteration = [int]$iterationMatch.Groups[1].Value
+            } else {
+              $iteration = 0
+            }
+            if ($iteration -lt 0 -or $iteration -gt 65535) {
+              throw "Pre-release iteration number must be between 0 and 65535"
             }
 
             # Re-running the same commit may reuse its release. Reusing a

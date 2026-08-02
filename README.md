@@ -264,7 +264,7 @@ The repository has two public release tracks:
 - **Stable:** a version change pushed to `stable` creates `vX.Y.Z` and remains the app updater's
   only update source.
 - **Pre-release:** changing `.github/BETA_VERSION` and pushing it to `beta` publishes exactly the
-  entered version, such as `v1.5.0-beta.1`, `v1.5.0-beta.2`, or `v1.5.0-rc.1`.
+  entered version, such as `v1.5.0-beta.1`, `v1.5.0-beta.rc`, or `v1.5.0-rc.1`.
 
 Both tracks use the same cached **Release | x64** build implementation. Pre-releases are marked as
 such on GitHub, are never made the latest release, and use a versioned ZIP filename so testers can
@@ -293,7 +293,7 @@ Workflow files: [`.github/workflows/release.yml`](.github/workflows/release.yml)
 
 4. Normal code pushes that do not change `BETA_VERSION` create no release. For the next public
    build, manually change the line to `1.5.0-beta.2`. For a release candidate, enter
-   `1.5.0-rc.1`, then `1.5.0-rc.2`, and so on.
+   `1.5.0-beta.rc`, `1.5.0-rc`, `1.5.0-rc.1`, and so on.
 
 The exact `BETA_VERSION` value is used for the Git tag, release title, ZIP filename, Windows
 ProductVersion shown on the About page, and the Windows pre-release flag. These resource changes
