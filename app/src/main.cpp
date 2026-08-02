@@ -124,10 +124,18 @@ int wmain(int argument_count, wchar_t* arguments[]) {
       }
     }
 
+    bool acquired = false;
     for (int attempt = 0; attempt < 100; ++attempt) {
       const auto instance_result = instance_guard.Acquire();
-      if (instance_result == minimize::platform::windows::SingleInstanceResult::kPrimary) break;
+      if (instance_result == minimize::platform::windows::SingleInstanceResult::kPrimary) {
+        acquired = true;
+        break;
+      }
       Sleep(50);
+    }
+    if (!acquired) {
+      std::wcerr << L"Failed to acquire single instance lock during update handover\n";
+      return 1;
     }
     application.CompleteUpdateHandover();
   }
