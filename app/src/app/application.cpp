@@ -17,7 +17,7 @@ int Application::Run() { return runtime_->Run(); }
 
 void Application::RenderUpdateHandoverFrame() { runtime_->RenderUpdateHandoverFrame(); }
 
-void Application::CompleteUpdateHandover() { runtime_->CompleteUpdateHandover(); }
+bool Application::CompleteUpdateHandover() { return runtime_->CompleteUpdateHandover(); }
 
 void Application::RequestShutdown() { runtime_->RequestShutdown(); }
 

@@ -137,7 +137,9 @@ int wmain(int argument_count, wchar_t* arguments[]) {
       std::wcerr << L"Failed to acquire single instance lock during update handover\n";
       return 1;
     }
-    application.CompleteUpdateHandover();
+    if (!application.CompleteUpdateHandover()) {
+      return 1;
+    }
   }
 
   return application.Run();

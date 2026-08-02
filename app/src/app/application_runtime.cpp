@@ -159,14 +159,15 @@ void ApplicationRuntime::ResumeAfterUpdateHandoverFailure() {
   frame_scheduler_.Wake();
 }
 
-void ApplicationRuntime::CompleteUpdateHandover() {
+bool ApplicationRuntime::CompleteUpdateHandover() {
   if (!StartRuntimeServices()) {
     minimize::core::LogDebug(L"Update", L"Could not start runtime services after handover");
-    return;
+    return false;
   }
   settings_window_.CompleteUpdateHandover();
   update_handover_prepared_.store(false, std::memory_order_release);
   frame_scheduler_.Wake();
+  return true;
 }
 
 void ApplicationRuntime::RequestShutdown() {

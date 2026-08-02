@@ -33,7 +33,7 @@ public:
   [[nodiscard]] bool Initialize(HINSTANCE instance, const ApplicationLaunchOptions& options = {});
   [[nodiscard]] int Run();
   void RenderUpdateHandoverFrame();
-  void CompleteUpdateHandover();
+  [[nodiscard]] bool CompleteUpdateHandover();
   void RequestShutdown();
 
 private:
