@@ -332,11 +332,24 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.5.0-beta.rc
-            - Improved frame pacing, animation rendering, and context menu input handling.
-            - Maintained window animations active while dragging the settings window.
-            - Isolated stress test feedback and status from the repair tab.
-            - Scoped bulk minimize and restore actions to honor display exclusion settings.
+            ### Changes in 1.5.0
+            - Configurable hotkeys to minimize and restore all windows with synchronized bulk animations.
+            - Configurable reversal animation with custom duration, easing curves and bezier controls.
+            - Auto-hide taskbar detection during minimize animations for a smooth landing.
+            - Direct GPU VRAM texture copying via CopySubresourceRegion for drastically reduced capture latency.
+            - Precompiled HLSL shaders at build time, eliminating runtime D3DCompile and d3dcompiler_47.dll.
+            - In-memory window state management replacing SetPropW kernel atom injection.
+            - Native Win32 WM_NCHITTEST titlebar dragging with DWM Snap Layouts support.
+            - Matched overlay window corner rounding with DWM corner preferences.
+            - Pixel-exact animation overlays across mixed-DPI displays.
+            - Cleaner update progress display with compact loading animation and download size indicator.
+            - Prevented sequential window activation and visual delay during minimize-all.
+            - Reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
+            - Smooth frame pacing, animation rendering, and context menu input handling.
+            - Robust update handover that aborts on lock acquisition or runtime service failure.
+            - Event-driven power setting notifications instead of polling loops.
+            - Modern C++20 std::format formatting and in-process zip extraction via miniz.
+            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
@@ -374,11 +387,24 @@ jobs:
             Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
             This build may be unstable and does not replace the latest stable download.
 
-            ### Changes in 1.5.0-beta.rc
-            - Improved frame pacing, animation rendering, and context menu input handling.
-            - Maintained window animations active while dragging the settings window.
-            - Isolated stress test feedback and status from the repair tab.
-            - Scoped bulk minimize and restore actions to honor display exclusion settings.
+            ### Changes in 1.5.0
+            - Configurable hotkeys to minimize and restore all windows with synchronized bulk animations.
+            - Configurable reversal animation with custom duration, easing curves and bezier controls.
+            - Auto-hide taskbar detection during minimize animations for a smooth landing.
+            - Direct GPU VRAM texture copying via CopySubresourceRegion for drastically reduced capture latency.
+            - Precompiled HLSL shaders at build time, eliminating runtime D3DCompile and d3dcompiler_47.dll.
+            - In-memory window state management replacing SetPropW kernel atom injection.
+            - Native Win32 WM_NCHITTEST titlebar dragging with DWM Snap Layouts support.
+            - Matched overlay window corner rounding with DWM corner preferences.
+            - Pixel-exact animation overlays across mixed-DPI displays.
+            - Cleaner update progress display with compact loading animation and download size indicator.
+            - Prevented sequential window activation and visual delay during minimize-all.
+            - Reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
+            - Smooth frame pacing, animation rendering, and context menu input handling.
+            - Robust update handover that aborts on lock acquisition or runtime service failure.
+            - Event-driven power setting notifications instead of polling loops.
+            - Modern C++20 std::format formatting and in-process zip extraction via miniz.
+            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
 
             ### Install
             1. Download **${{ steps.package.outputs.name }}**
