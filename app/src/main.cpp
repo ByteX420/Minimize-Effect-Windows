@@ -115,7 +115,7 @@ int wmain(int argument_count, wchar_t* arguments[]) {
         MSG message{};
         while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
           if (message.message == WM_QUIT) {
-            return 0;
+            return static_cast<int>(message.wParam);
           }
           TranslateMessage(&message);
           DispatchMessageW(&message);
