@@ -332,11 +332,11 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.5.0-beta.5
-            - Preserved live minimize snapshots so in-progress window state survives minimize transitions reliably.
-            - Added target-process cloaking for external windows, with reliable managed-window restore handling.
-            - Serialized bulk desktop capture operations to avoid unsafe concurrent access to shared graphics resources.
-            - Discarded state for destroyed windows to prevent stale HWND data from affecting later windows.
+            ### Changes in 1.5.0-beta.rc
+            - Improved frame pacing, animation rendering, and context menu input handling.
+            - Maintained window animations active while dragging the settings window.
+            - Isolated stress test feedback and status from the repair tab.
+            - Scoped bulk minimize and restore actions to honor display exclusion settings.
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
@@ -374,11 +374,11 @@ jobs:
             Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
             This build may be unstable and does not replace the latest stable download.
 
-            ### Changes in 1.5.0-beta.5
-            - Preserved live minimize snapshots so in-progress window state survives minimize transitions reliably.
-            - Added target-process cloaking for external windows, with reliable managed-window restore handling.
-            - Serialized bulk desktop capture operations to avoid unsafe concurrent access to shared graphics resources.
-            - Discarded state for destroyed windows to prevent stale HWND data from affecting later windows.
+            ### Changes in 1.5.0-beta.rc
+            - Improved frame pacing, animation rendering, and context menu input handling.
+            - Maintained window animations active while dragging the settings window.
+            - Isolated stress test feedback and status from the repair tab.
+            - Scoped bulk minimize and restore actions to honor display exclusion settings.
 
             ### Install
             1. Download **${{ steps.package.outputs.name }}**
