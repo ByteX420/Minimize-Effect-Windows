@@ -62,7 +62,8 @@ void FrameScheduler::UpdateMonitor(AnimationRun& run) {
       run.live_animation_bounds = *current_bounds;
     }
   }
-  HMONITOR monitor = run.animating_window != nullptr && IsWindow(run.animating_window)
+  HMONITOR monitor = run.animating_window != nullptr && IsWindow(run.animating_window) &&
+                             !IsIconic(run.animating_window)
                          ? MonitorFromWindow(run.animating_window, MONITOR_DEFAULTTONEAREST)
                          : nullptr;
   if (monitor == nullptr) monitor = MonitorFromRect(&monitor_bounds, MONITOR_DEFAULTTONEAREST);
@@ -78,7 +79,6 @@ void FrameScheduler::UpdateMonitor(AnimationRun& run) {
   }
   run.animation_frame_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
       std::chrono::duration<double>(1.0 / *refresh_rate));
-  run.next_animation_frame_time = std::chrono::steady_clock::now() + run.animation_frame_interval;
 }
 
 bool FrameScheduler::IsDue(const AnimationRun& run) const {
@@ -99,7 +99,7 @@ unsigned int FrameScheduler::Advance(AnimationRun& run) {
   return static_cast<unsigned int>(std::min<std::int64_t>(static_cast<std::int64_t>(missed), 120));
 }
 
-void FrameScheduler::Wait(const AnimationRunPool& runs) {
+void FrameScheduler::Wait(const AnimationRunPool& runs, HANDLE settings_frame_waitable_object) {
   bool has_interval = false;
   auto earliest = std::chrono::steady_clock::time_point::max();
   for (const AnimationRun& run : runs) {
@@ -111,31 +111,45 @@ void FrameScheduler::Wait(const AnimationRunPool& runs) {
     earliest = std::min(earliest, run.next_animation_frame_time);
     has_interval = true;
   }
-  if (!has_interval) {
+  if (!has_interval && settings_frame_waitable_object == nullptr) {
     MsgWaitForMultipleObjects(0, nullptr, FALSE, 16, QS_ALLINPUT);
     return;
   }
   const auto now = std::chrono::steady_clock::now();
-  if (now >= earliest) return;
-  const auto wait_duration = earliest - now;
-  if (timer_) {
+  if (has_interval && now >= earliest) return;
+
+  DWORD timeout = INFINITE;
+  HANDLE handles[2]{};
+  DWORD handle_count = 0;
+  bool timer_armed = false;
+  std::chrono::steady_clock::duration wait_duration{};
+  if (has_interval) {
+    wait_duration = earliest - now;
+  }
+  if (has_interval && timer_) {
     const auto hundred_ns =
         std::chrono::duration_cast<std::chrono::nanoseconds>(wait_duration).count() / 100;
     LARGE_INTEGER due_time{};
     due_time.QuadPart = -std::max<std::int64_t>(1, hundred_ns);
     if (SetWaitableTimerEx(timer_.get(), &due_time, 0, nullptr, nullptr, nullptr, 0)) {
-      const HANDLE handles[] = {timer_.get()};
-      MsgWaitForMultipleObjectsEx(1, handles, INFINITE, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-      return;
+      handles[handle_count++] = timer_.get();
+      timer_armed = true;
     }
   }
-  const auto wait_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(wait_duration).count();
-  const DWORD timeout = static_cast<DWORD>(std::max<std::int64_t>(1, (wait_ns + 999999) / 1000000));
-  MsgWaitForMultipleObjects(0, nullptr, FALSE, timeout, QS_ALLINPUT);
+  if (settings_frame_waitable_object != nullptr) {
+    handles[handle_count++] = settings_frame_waitable_object;
+  }
+  if (has_interval && !timer_armed) {
+    const auto wait_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(wait_duration).count();
+    timeout =
+        static_cast<DWORD>(std::max<std::int64_t>(1, (wait_ns + 999999) / 1000000));
+  }
+  MsgWaitForMultipleObjectsEx(handle_count, handles, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 }
 
 void FrameScheduler::BeginFallbackTimerResolution() {
-  if (high_resolution_timer_ || fallback_resolution_active_) return;
+  if (fallback_resolution_active_) return;
   TIMECAPS capabilities{};
   if (timeGetDevCaps(&capabilities, sizeof(capabilities)) != TIMERR_NOERROR ||
       capabilities.wPeriodMin == 0) {

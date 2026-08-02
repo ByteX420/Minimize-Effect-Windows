@@ -414,10 +414,10 @@ void SettingsWindow::Render() {
   if (!IsWindowVisible(hwnd_)) return;
   const ULONGLONG now_ms = GetTickCount64();
   const bool is_animating = startup_enter_motion_active_ || (now_ms - shown_at_ms_ < 500);
-  const bool is_active = (GetForegroundWindow() == hwnd_);
   const bool feedback_active = !save_feedback_.empty() && now_ms < save_feedback_until_ms_;
-  if (!is_animating && !is_active && !animation_preview_.active() && !feedback_active &&
-      motion_system_.GetStats().active_tracks == 0 && !render_requested_)
+  const bool update_active = update_workspace_engaged_ || update_resume_active_;
+  if (!is_animating && !titlebar_dragging_ && !animation_preview_.active() && !feedback_active &&
+      !update_active && !motion_system_.HasActiveTracks() && !render_requested_)
     return;
   render_requested_ = false;
   if (!renderer_.BeginFrame()) {
@@ -427,7 +427,7 @@ void SettingsWindow::Render() {
   motion_system_.BeginFrame(ImGui::GetIO().DeltaTime);
   SettingsShell::Render(*this);
   UpdateStartupEnterMotionGate();
-  renderer_.EndFrame();
+  if (!renderer_.EndFrame()) render_requested_ = true;
 }
 
 void SettingsWindow::ForceRender() { render_requested_ = true; }
@@ -438,8 +438,7 @@ bool SettingsWindow::WantsContinuousRendering() const {
   }
   return startup_enter_motion_active_ || animation_preview_.active() ||
          update_workspace_engaged_ || update_resume_active_ ||
-         GetForegroundWindow() == hwnd_ || motion_system_.GetStats().active_tracks > 0 ||
-         render_requested_;
+         titlebar_dragging_ || motion_system_.HasActiveTracks() || render_requested_;
 }
 
 }  // namespace minimize::ui

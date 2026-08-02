@@ -2,6 +2,7 @@
 
 #include <d3d11.h>
 #include <dxgi.h>
+#include <dxgi1_3.h>
 #include <windows.h>
 #include <wrl/client.h>
 
@@ -16,7 +17,7 @@ public:
   bool Initialize(HWND window);
   void Shutdown();
   [[nodiscard]] bool BeginFrame();
-  void EndFrame();
+  [[nodiscard]] bool EndFrame();
   void Resize(UINT width, UINT height);
   [[nodiscard]] bool HandleWin32Message(HWND window, UINT message, WPARAM w_param,
                                         LPARAM l_param) const;
@@ -29,6 +30,9 @@ public:
   [[nodiscard]] ImFont* body_font() const { return body_font_; }
   [[nodiscard]] ImFont* medium_font() const { return medium_font_; }
   [[nodiscard]] ImFont* title_font() const { return title_font_; }
+  [[nodiscard]] HANDLE frame_latency_waitable_object() const {
+    return frame_latency_waitable_object_;
+  }
 
 private:
   bool CreateDeviceResources();
@@ -45,6 +49,8 @@ private:
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
   Microsoft::WRL::ComPtr<IDXGISwapChain> swap_chain_;
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> render_target_view_;
+  HANDLE frame_latency_waitable_object_ = nullptr;
+  UINT swap_chain_flags_ = 0;
   bool context_ready_ = false;
   bool win32_ready_ = false;
   bool dx11_ready_ = false;

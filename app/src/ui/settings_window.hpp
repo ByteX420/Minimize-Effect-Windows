@@ -59,6 +59,9 @@ public:
   void ForceRender();
   [[nodiscard]] HWND hwnd() const { return hwnd_; }
   [[nodiscard]] bool WantsContinuousRendering() const;
+  [[nodiscard]] HANDLE RenderWaitHandle() const {
+    return renderer_.frame_latency_waitable_object();
+  }
   // True while the open/enter motion for shell + sidebar + first page content is still running.
   // Used to defer heavy startup work (e.g. iconic seed) until the UI is fully settled.
   [[nodiscard]] bool IsStartupEnterMotionActive() const { return startup_enter_motion_active_; }

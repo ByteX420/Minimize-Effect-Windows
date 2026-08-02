@@ -91,15 +91,22 @@ bool ImguiRenderer::BeginFrame() {
   return true;
 }
 
-void ImguiRenderer::EndFrame() {
-  if (!ready()) return;
+bool ImguiRenderer::EndFrame() {
+  if (!ready()) return false;
   ImGui::Render();
   constexpr float clear_color[] = {0.0f, 0.0f, 0.0f, 0.0f};
   context_->OMSetRenderTargets(1, render_target_view_.GetAddressOf(), nullptr);
   context_->ClearRenderTargetView(render_target_view_.Get(), clear_color);
   ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-  const HRESULT result = swap_chain_->Present(1, 0);
-  if (IsDeviceLostError(result)) HandleDeviceLost();
+  // Never let the settings swap chain wait for vblank on the runtime/UI thread. The frame
+  // latency handle paces menu rendering while animation timers and Win32 input stay responsive.
+  const HRESULT result = swap_chain_->Present(0, DXGI_PRESENT_DO_NOT_WAIT);
+  if (result == DXGI_ERROR_WAS_STILL_DRAWING) return false;
+  if (IsDeviceLostError(result)) {
+    HandleDeviceLost();
+    return false;
+  }
+  return SUCCEEDED(result);
 }
 
 void ImguiRenderer::Resize(UINT width, UINT height) {
@@ -107,7 +114,8 @@ void ImguiRenderer::Resize(UINT width, UINT height) {
   context_->OMSetRenderTargets(0, nullptr, nullptr);
   context_->ClearState();
   render_target_view_.Reset();
-  const HRESULT result = swap_chain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, 0);
+  const HRESULT result =
+      swap_chain_->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN, swap_chain_flags_);
   if (IsDeviceLostError(result)) {
     HandleDeviceLost();
   } else if (SUCCEEDED(result)) {
@@ -140,20 +148,45 @@ bool ImguiRenderer::ready() const {
 }
 
 bool ImguiRenderer::CreateDeviceResources() {
-  DXGI_SWAP_CHAIN_DESC desc{};
-  desc.BufferCount = 2;
-  desc.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-  desc.OutputWindow = window_;
-  desc.SampleDesc.Count = 1;
-  desc.Windowed = TRUE;
-  desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
   constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
   D3D_FEATURE_LEVEL level{};
-  const HRESULT result = D3D11CreateDeviceAndSwapChain(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                                                       0, levels, 1, D3D11_SDK_VERSION, &desc,
-                                                       &swap_chain_, &device_, &level, &context_);
-  return SUCCEEDED(result) && CreateRenderTarget();
+  HRESULT result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, 1,
+                                     D3D11_SDK_VERSION, &device_, &level, &context_);
+  if (FAILED(result)) return false;
+
+  Microsoft::WRL::ComPtr<IDXGIDevice> dxgi_device;
+  Microsoft::WRL::ComPtr<IDXGIAdapter> adapter;
+  Microsoft::WRL::ComPtr<IDXGIFactory2> factory;
+  if (FAILED(device_.As(&dxgi_device)) || FAILED(dxgi_device->GetAdapter(&adapter)) ||
+      FAILED(adapter->GetParent(IID_PPV_ARGS(&factory)))) {
+    return false;
+  }
+
+  DXGI_SWAP_CHAIN_DESC1 desc{};
+  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  desc.SampleDesc.Count = 1;
+  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  desc.BufferCount = 2;
+  desc.Scaling = DXGI_SCALING_STRETCH;
+  desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+  desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+  desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+
+  Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain;
+  result = factory->CreateSwapChainForHwnd(device_.Get(), window_, &desc, nullptr, nullptr,
+                                           &swap_chain);
+  if (FAILED(result)) return false;
+  swap_chain_ = swap_chain;
+  swap_chain_flags_ = desc.Flags;
+  factory->MakeWindowAssociation(window_, DXGI_MWA_NO_ALT_ENTER);
+
+  Microsoft::WRL::ComPtr<IDXGISwapChain2> swap_chain2;
+  if (SUCCEEDED(swap_chain_.As(&swap_chain2)) &&
+      SUCCEEDED(swap_chain2->SetMaximumFrameLatency(1))) {
+    frame_latency_waitable_object_ = swap_chain2->GetFrameLatencyWaitableObject();
+  }
+  if (frame_latency_waitable_object_ == nullptr) return false;
+  return CreateRenderTarget();
 }
 
 bool ImguiRenderer::CreateRenderTarget() {
@@ -172,6 +205,8 @@ void ImguiRenderer::ReleaseDeviceResources() {
     context_->ClearState();
   }
   render_target_view_.Reset();
+  frame_latency_waitable_object_ = nullptr;
+  swap_chain_flags_ = 0;
   swap_chain_.Reset();
   context_.Reset();
   device_.Reset();

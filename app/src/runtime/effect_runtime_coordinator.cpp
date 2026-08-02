@@ -409,9 +409,10 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
   // monitor refresh of latency between windows; queued hook messages still get dispatched by the
   // normal message pump before the next pass.
   if (bulk_window_action_ != BulkWindowAction::kNone) return MessageLoopWait::kImmediate;
-  if (any_active) return MessageLoopWait::kAnimation;
-  return settings_window_.WantsContinuousRendering() ? MessageLoopWait::kImmediate
-                                                     : MessageLoopWait::kFrame;
+  if (any_active || settings_window_.WantsContinuousRendering()) {
+    return MessageLoopWait::kAnimation;
+  }
+  return MessageLoopWait::kFrame;
 }
 
 void ApplicationRuntime::ResetAnimationFramePacing(int run_index, HWND window,
@@ -436,7 +437,12 @@ void ApplicationRuntime::AdvanceAnimationFrameDeadline(int run_index) {
   }
 }
 
-void ApplicationRuntime::WaitForAnimationFrameOrMessage() { frame_scheduler_.Wait(runs_); }
+void ApplicationRuntime::WaitForAnimationFrameOrMessage() {
+  const HANDLE settings_frame = settings_window_.WantsContinuousRendering()
+                                    ? settings_window_.RenderWaitHandle()
+                                    : nullptr;
+  frame_scheduler_.Wait(runs_, settings_frame);
+}
 
 bool ApplicationRuntime::IsTemporarilyPaused() const {
   return pause_controller_.IsPaused(GetTickCount64());

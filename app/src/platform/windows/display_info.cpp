@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "platform/windows/display_info.hpp"
 
@@ -25,6 +25,8 @@ std::optional<double> GetMonitorRefreshRateHz(HMONITOR monitor) {
   MONITORINFOEXW monitor_info{};
   monitor_info.cbSize = sizeof(monitor_info);
   if (!GetMonitorInfoW(monitor, &monitor_info)) return std::nullopt;
+
+  double max_hertz = 0.0;
 
   constexpr UINT32 kFlags = QDC_ONLY_ACTIVE_PATHS | QDC_VIRTUAL_MODE_AWARE;
   for (int attempt = 0; attempt < 3; ++attempt) {
@@ -53,7 +55,9 @@ std::optional<double> GetMonitorRefreshRateHz(HMONITOR monitor) {
       if (refresh.Numerator != 0 && refresh.Denominator != 0) {
         const double hertz =
             static_cast<double>(refresh.Numerator) / static_cast<double>(refresh.Denominator);
-        if (hertz > 0.0) return hertz;
+        if (hertz > max_hertz) {
+          max_hertz = hertz;
+        }
       }
     }
     break;
@@ -63,8 +67,13 @@ std::optional<double> GetMonitorRefreshRateHz(HMONITOR monitor) {
   mode.dmSize = sizeof(mode);
   if (EnumDisplaySettingsExW(monitor_info.szDevice, ENUM_CURRENT_SETTINGS, &mode, 0) &&
       (mode.dmFields & DM_DISPLAYFREQUENCY) != 0 && mode.dmDisplayFrequency > 1) {
-    return static_cast<double>(mode.dmDisplayFrequency);
+    const double enum_hertz = static_cast<double>(mode.dmDisplayFrequency);
+    if (enum_hertz > max_hertz) {
+      max_hertz = enum_hertz;
+    }
   }
+
+  if (max_hertz > 0.0) return max_hertz;
   return std::nullopt;
 }
 

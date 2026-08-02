@@ -23,7 +23,7 @@ public:
   void UpdateMonitor(AnimationRun& run);
   [[nodiscard]] bool IsDue(const AnimationRun& run) const;
   [[nodiscard]] unsigned int Advance(AnimationRun& run);
-  void Wait(const AnimationRunPool& runs);
+  void Wait(const AnimationRunPool& runs, HANDLE settings_frame_waitable_object = nullptr);
   void EndFallbackTimerResolution();
 
 private:
