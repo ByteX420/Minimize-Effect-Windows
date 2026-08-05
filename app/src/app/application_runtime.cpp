@@ -140,6 +140,7 @@ int ApplicationRuntime::Run() {
       .render_settings = [this] { settings_window_.Render(); },
       .tick_runtime = [this] { return TickRuntime(); },
       .wait_for_animation = [this] { WaitForAnimationFrameOrMessage(); },
+      .wait_for_idle_frame = [this] { WaitForIdleFrame(); },
   });
 }
 

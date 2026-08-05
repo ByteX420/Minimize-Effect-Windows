@@ -25,15 +25,18 @@ void FrameScheduler::Initialize() {
   if (!timer_) {
     timer_.reset(CreateWaitableTimerW(nullptr, FALSE, nullptr));
   }
+  wake_event_.reset(CreateEventW(nullptr, FALSE, FALSE, nullptr));
 }
 
 void FrameScheduler::Shutdown() {
   EndFallbackTimerResolution();
   timer_.reset();
+  wake_event_.reset();
   high_resolution_timer_ = false;
 }
 
 void FrameScheduler::Wake() {
+  if (wake_event_ != nullptr) SetEvent(wake_event_.get());
   if (!timer_) return;
   LARGE_INTEGER wake_now{};
   SetWaitableTimer(timer_.get(), &wake_now, 0, nullptr, nullptr, FALSE);
@@ -146,6 +149,28 @@ void FrameScheduler::Wait(const AnimationRunPool& runs, HANDLE settings_frame_wa
         static_cast<DWORD>(std::max<std::int64_t>(1, (wait_ns + 999999) / 1000000));
   }
   MsgWaitForMultipleObjectsEx(handle_count, handles, timeout, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+}
+
+void FrameScheduler::WaitIdle(ULONGLONG deadline_ms, HANDLE settings_frame_waitable_object) {
+  // Idle waits are event-driven: wake on the wake event, on a settings render request, or on
+  // an incoming message; otherwise sleep until the given periodic-work deadline (0 = forever).
+  HANDLE handles[2]{};
+  DWORD handle_count = 0;
+  if (wake_event_ != nullptr) handles[handle_count++] = wake_event_.get();
+  if (settings_frame_waitable_object != nullptr) {
+    handles[handle_count++] = settings_frame_waitable_object;
+  }
+  DWORD timeout_ms = INFINITE;
+  const ULONGLONG now_ms = GetTickCount64();
+  if (deadline_ms != 0) {
+    if (deadline_ms > now_ms) {
+      const ULONGLONG remaining_ms = deadline_ms - now_ms;
+      timeout_ms = static_cast<DWORD>(std::min<ULONGLONG>(remaining_ms, 1000));
+    } else {
+      timeout_ms = 0;
+    }
+  }
+  MsgWaitForMultipleObjectsEx(handle_count, handles, timeout_ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
 }
 
 void FrameScheduler::BeginFallbackTimerResolution() {

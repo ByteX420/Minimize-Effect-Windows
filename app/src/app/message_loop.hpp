@@ -17,6 +17,7 @@ struct MessageLoopCallbacks {
   std::function<void()> render_settings;
   std::function<MessageLoopWait()> tick_runtime;
   std::function<void()> wait_for_animation;
+  std::function<void()> wait_for_idle_frame;
 };
 
 class MessageLoop final {

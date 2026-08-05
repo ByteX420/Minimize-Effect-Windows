@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <windows.h>
 
@@ -11,6 +11,7 @@ public:
   [[nodiscard]] bool ShouldAttempt(ULONGLONG now) const;
   void MarkSucceeded();
   void ScheduleRetry(ULONGLONG now);
+  [[nodiscard]] ULONGLONG next_attempt_ms() const { return next_attempt_ms_; }
 
 private:
   static constexpr DWORD kInitialDelayMilliseconds = 250;

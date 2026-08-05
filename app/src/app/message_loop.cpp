@@ -28,7 +28,7 @@ int MessageLoop::Run(const MessageLoopCallbacks& callbacks) const {
         MsgWaitForMultipleObjects(0, nullptr, FALSE, 0, QS_ALLINPUT);
         break;
       case MessageLoopWait::kFrame:
-        MsgWaitForMultipleObjects(0, nullptr, FALSE, 16, QS_ALLINPUT);
+        callbacks.wait_for_idle_frame();
         break;
     }
   }

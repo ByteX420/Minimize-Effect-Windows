@@ -156,6 +156,7 @@ private:
   [[nodiscard]] bool IsAnimationFrameDue(int run_index) const;
   void AdvanceAnimationFrameDeadline(int run_index);
   void WaitForAnimationFrameOrMessage();
+  void WaitForIdleFrame();
   bool CreateAnimationRenderer();
   void BeginAnimationRendererRecovery();
   bool TryRecoverAnimationRenderer();

@@ -444,6 +444,40 @@ void ApplicationRuntime::WaitForAnimationFrameOrMessage() {
   frame_scheduler_.Wait(runs_, settings_frame);
 }
 
+void ApplicationRuntime::WaitForIdleFrame() {
+  // Bound the idle wait by the next periodic-runtime deadline instead of polling at 16 ms.
+  // We check:
+  // 1. Next snapshot refresh deadline (if effect is active)
+  // 2. Temporary pause expiry deadline
+  // 3. Renderer recovery retry deadline
+  const ULONGLONG now_ms = GetTickCount64();
+  ULONGLONG deadline_ms = 0;
+
+  auto update_deadline = [&deadline_ms](ULONGLONG candidate) {
+    if (candidate != 0) {
+      deadline_ms = (deadline_ms == 0) ? candidate : std::min(deadline_ms, candidate);
+    }
+  };
+
+  if (IsEffectActive()) {
+    constexpr ULONGLONG kSnapshotRefreshIntervalMs = 120;
+    update_deadline(std::max(last_snapshot_refresh_ms_, now_ms) + kSnapshotRefreshIntervalMs);
+  }
+
+  if (!pause_controller_.until_restart() && pause_controller_.until_ms() != 0) {
+    update_deadline(pause_controller_.until_ms());
+  }
+
+  if (renderer_recovery_.pending() && renderer_recovery_.next_attempt_ms() != 0) {
+    update_deadline(renderer_recovery_.next_attempt_ms());
+  }
+
+  const HANDLE settings_frame = settings_window_.WantsContinuousRendering()
+                                    ? settings_window_.RenderWaitHandle()
+                                    : nullptr;
+  frame_scheduler_.WaitIdle(deadline_ms, settings_frame);
+}
+
 bool ApplicationRuntime::IsTemporarilyPaused() const {
   return pause_controller_.IsPaused(GetTickCount64());
 }
