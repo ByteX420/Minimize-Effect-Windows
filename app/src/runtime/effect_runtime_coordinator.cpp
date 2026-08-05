@@ -359,18 +359,28 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
                                                 renderer_recovery_.pending());
   }
 
-  if (IsEffectActive() && FindAvailableRun() != -1) {
-    for (auto& [hwnd, snapshot] : snapshot_cache_.Restore()) {
+  constexpr ULONGLONG kRestoreWatchdogIntervalMs = 250;
+  if (IsEffectActive() && !snapshot_cache_.Restore().empty() &&
+      now_ms - last_restore_watchdog_ms_ >= kRestoreWatchdogIntervalMs) {
+    last_restore_watchdog_ms_ = now_ms;
+    HWND restore_candidate = nullptr;
+    for (const auto& [hwnd, snapshot] : snapshot_cache_.Restore()) {
       (void)snapshot;
       if (FindRunForWindow(hwnd) != -1) {
         continue;
       }
-      if (IsWindow(hwnd) && IsWindowVisible(hwnd) && restore_feature_.IsWindowRestored(hwnd)) {
-        std::wcout << L"Poll: detected restore for hwnd=0x" << std::hex
-                   << reinterpret_cast<std::uintptr_t>(hwnd) << std::dec << std::endl;
-        OnRestoreAttempt(hwnd);
-        break;  // Only handle one at a time
+      if (hwnd == nullptr || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
+        continue;
       }
+      if (!restore_feature_.IsWindowRestored(hwnd)) {
+        continue;
+      }
+      restore_candidate = hwnd;
+      break;
+    }
+    if (restore_candidate != nullptr) {
+      core::LogTrace(L"Restore", L"Fallback watchdog detected a missed restore event");
+      OnRestoreAttempt(restore_candidate);
     }
   }
 
