@@ -31,9 +31,11 @@ public:
   DesktopCapture& operator=(const DesktopCapture&) = delete;
 
   [[nodiscard]] bool CaptureRegion(HWND window, const RECT& screen_rect,
-                                   CapturedTexture* captured_texture);
+                                   CapturedTexture* captured_texture,
+                                   const WindowVisualMetadata* metadata = nullptr);
   [[nodiscard]] bool CaptureWindow(HWND window, const RECT& requested_screen_rect,
-                                   CapturedTexture* captured_texture, RECT* captured_screen_rect);
+                                   CapturedTexture* captured_texture, RECT* captured_screen_rect,
+                                   const WindowVisualMetadata* metadata = nullptr);
   [[nodiscard]] bool RefreshCapturedTexture(const RECT& screen_rect,
                                             CapturedTexture* captured_texture);
   void ClearHistory() { duplication_session_.ClearHistory(); }

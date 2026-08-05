@@ -216,7 +216,9 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   auto pre_minimize = snapshots_.PreMinimize().find(window);
   const bool has_cached = pre_minimize != snapshots_.PreMinimize().end() &&
                           pre_minimize->second.texture.shader_resource_view != nullptr;
-  const bool prefer_window_capture = rendering::QueryWindowVisualMetadata(window).is_layered;
+  const rendering::WindowVisualMetadata visual_metadata =
+      rendering::QueryWindowVisualMetadata(window);
+  const bool prefer_window_capture = visual_metadata.is_layered;
   const auto capture_started = std::chrono::steady_clock::now();
   if (already_minimized && has_cached) {
     source_bounds = pre_minimize->second.bounds;
@@ -227,7 +229,7 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     source_bounds = captured_window_bounds;
   } else if (!already_minimized && context.force_animation && !IsHungAppWindow(window) &&
              context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                            &captured_window_bounds)) {
+                                            &captured_window_bounds, &visual_metadata)) {
     // Bulk capture does not need to focus or reorder the target. This avoids one DWM flush and
     // one fresh desktop-duplication frame per window while preserving the native-resolution image.
     source_bounds = captured_window_bounds;
@@ -245,16 +247,17 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     }
   } else if (!already_minimized && !context.force_animation && prefer_window_capture &&
              context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                            &captured_window_bounds)) {
+                                            &captured_window_bounds, &visual_metadata)) {
     source_bounds = captured_window_bounds;
   } else if (!already_minimized) {
     // Bulk hotkeys must never reorder every real window as capture fallbacks run.
     if (!context.force_animation) topmost.Activate();
     context.capture->ClearHistory();
-    bool captured = context.capture->CaptureRegion(window, *animation_bounds, &captured_texture);
+    bool captured = context.capture->CaptureRegion(window, *animation_bounds, &captured_texture,
+                                                   &visual_metadata);
     if (!captured && !prefer_window_capture) {
       captured = context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                                &captured_window_bounds);
+                                                &captured_window_bounds, &visual_metadata);
       if (captured) source_bounds = captured_window_bounds;
     }
     if (!captured && has_cached) {
@@ -495,7 +498,9 @@ void MinimizeFeature::UpdatePreMinimizeSnapshot(HWND window, HWND overlay,
   RECT snapshot_bounds = *animation_bounds;
   bool captured = false;
   snapshots_.Prune();
-  const bool prefer_window_capture = rendering::QueryWindowVisualMetadata(window).is_layered;
+  const rendering::WindowVisualMetadata visual_metadata =
+      rendering::QueryWindowVisualMetadata(window);
+  const bool prefer_window_capture = visual_metadata.is_layered;
   auto existing = snapshots_.PreMinimize().find(window);
   if (!prefer_window_capture && existing != snapshots_.PreMinimize().end() &&
       EqualRect(&existing->second.bounds, &snapshot_bounds) &&
@@ -506,16 +511,17 @@ void MinimizeFeature::UpdatePreMinimizeSnapshot(HWND window, HWND overlay,
   if (!captured && prefer_window_capture) {
     RECT captured_window_bounds{};
     captured = capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                      &captured_window_bounds);
+                                      &captured_window_bounds, &visual_metadata);
     if (captured) snapshot_bounds = captured_window_bounds;
   }
   if (!captured) {
-    captured = capture->CaptureRegion(window, *animation_bounds, &captured_texture);
+    captured = capture->CaptureRegion(window, *animation_bounds, &captured_texture,
+                                      &visual_metadata);
   }
   if (!captured) {
     RECT captured_window_bounds{};
     if (!capture->CaptureWindow(window, *animation_bounds, &captured_texture,
-                                &captured_window_bounds)) {
+                                &captured_window_bounds, &visual_metadata)) {
       core::LogTrace(L"Minimize", L"Pre-minimize snapshot capture failed");
       return;
     }

@@ -129,7 +129,8 @@ DesktopCapture::DesktopCapture(D3dDevice* d3d_device)
     : d3d_device_(d3d_device), duplication_session_(d3d_device) {}
 
 bool DesktopCapture::CaptureRegion(HWND window, const RECT& screen_rect,
-                                   CapturedTexture* captured_texture) {
+                                   CapturedTexture* captured_texture,
+                                   const WindowVisualMetadata* metadata) {
   if (captured_texture == nullptr || capture_geometry::Width(screen_rect) <= 0 ||
       capture_geometry::Height(screen_rect) <= 0) {
     return false;
@@ -149,18 +150,25 @@ bool DesktopCapture::CaptureRegion(HWND window, const RECT& screen_rect,
   if (!CopyRegionFromFrame(output, screen_rect, captured_texture)) return false;
   const RECT captured_rect =
       capture_geometry::ClampToOutput(screen_rect, output->desktop_coordinates);
-  return AttachWindowVisuals(window, captured_rect, QueryWindowVisualMetadata(window),
-                             captured_texture);
+
+  WindowVisualMetadata queried_metadata;
+  if (metadata == nullptr) {
+    queried_metadata = QueryWindowVisualMetadata(window);
+    metadata = &queried_metadata;
+  }
+  return AttachWindowVisuals(window, captured_rect, *metadata, captured_texture);
 }
 
 bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rect,
-                                   CapturedTexture* captured_texture, RECT* captured_screen_rect) {
+                                   CapturedTexture* captured_texture, RECT* captured_screen_rect,
+                                   const WindowVisualMetadata* metadata) {
   if (window == nullptr || !IsWindow(window) || captured_texture == nullptr ||
       captured_screen_rect == nullptr) {
     return false;
   }
 
-  WindowVisualMetadata visual_metadata = QueryWindowVisualMetadata(window);
+  WindowVisualMetadata visual_metadata =
+      metadata != nullptr ? *metadata : QueryWindowVisualMetadata(window);
   RECT window_rect{};
   if (!GetWindowRect(window, &window_rect)) {
     return false;
