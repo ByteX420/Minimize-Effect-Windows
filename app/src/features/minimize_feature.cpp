@@ -231,6 +231,18 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     // Bulk capture does not need to focus or reorder the target. This avoids one DWM flush and
     // one fresh desktop-duplication frame per window while preserving the native-resolution image.
     source_bounds = captured_window_bounds;
+  } else if (!already_minimized && !context.force_animation && has_cached &&
+             EqualRect(&pre_minimize->second.bounds, &source_bounds) &&
+             !prefer_window_capture) {
+    // The 120 ms pre-minimize snapshot already holds texture, SRV and mask for this window.
+    // Reuse those GPU resources and only refresh the pixel content in place; this avoids
+    // allocating a new texture + SRV + mask for the real minimize.
+    source_bounds = pre_minimize->second.bounds;
+    captured_texture = pre_minimize->second.texture;
+    if (!context.capture->RefreshCapturedTexture(*animation_bounds, &captured_texture)) {
+      // No new desktop frame (or transient failure): the cached content is still current
+      // because the pre-minimize snapshot is refreshed periodically.
+    }
   } else if (!already_minimized && !context.force_animation && prefer_window_capture &&
              context.capture->CaptureWindow(window, *animation_bounds, &captured_texture,
                                             &captured_window_bounds)) {
