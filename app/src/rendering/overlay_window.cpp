@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "rendering/overlay_window.hpp"
 
@@ -601,11 +601,6 @@ bool OverlayWindow::Render(float progress) {
     MarkDeviceLost(L"Present", result);
     return false;
   }
-  result = composition_device_->Commit();
-  if (FAILED(result)) {
-    MarkDeviceLost(L"DirectComposition commit", result);
-    return false;
-  }
   return true;
 }
 
@@ -621,10 +616,6 @@ void OverlayWindow::ClearFrame() {
   if (FAILED(hr)) {
     MarkDeviceLost(L"Clear-frame Present", hr);
     return;
-  }
-  hr = composition_device_->Commit();
-  if (FAILED(hr)) {
-    MarkDeviceLost(L"Clear-frame DirectComposition commit", hr);
   }
 }
 
