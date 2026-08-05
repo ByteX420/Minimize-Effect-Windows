@@ -34,6 +34,15 @@ on:
         description: "Optional override (e.g. 1.0.1). Leave empty to read from app/MinimizeEffect.rc"
         required: false
         default: ""
+      pgo_mode:
+        description: "Profile-Guided Optimization mode (Off, Instrument, Use)"
+        required: false
+        default: "Off"
+        type: choice
+        options:
+          - Off
+          - Instrument
+          - Use
   workflow_call:
     inputs:
       prerelease:
@@ -41,6 +50,11 @@ on:
         required: false
         type: boolean
         default: false
+      pgo_mode:
+        description: "Profile-Guided Optimization mode (Off, Instrument, Use)"
+        required: false
+        type: string
+        default: "Off"
 
 # Least privilege for release publishing
 permissions:
@@ -254,13 +268,16 @@ jobs:
       - name: Build optimized Release x64
         shell: pwsh
         run: |
-          Write-Host "MSBuild PlatformToolset=v145 CharacterSet=MultiByte (project defaults + shipping flags)"
+          $pgoMode = "${{ inputs.pgo_mode }}"
+          if (-not $pgoMode) { $pgoMode = "Off" }
+          Write-Host "MSBuild PlatformToolset=v145 CharacterSet=MultiByte PgoMode=$pgoMode (project defaults + shipping flags)"
           # Match stable shipping flags from the vcxproj. Explicit /p overrides keep CI honest
           # if a local user.props tries to weaken optimisations.
           msbuild MinimizeEffect.slnx `
             /restore `
             /p:Configuration=Release `
             /p:Platform=x64 `
+            /p:PgoMode=$pgoMode `
             /p:PlatformToolset=v145 `
             /p:CharacterSet=MultiByte `
             /p:WholeProgramOptimization=true `

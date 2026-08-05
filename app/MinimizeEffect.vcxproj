@@ -40,7 +40,11 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
-  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="UserMacros">
+    <PgoMode Condition="'$(PgoMode)'==''">Off</PgoMode>
+    <PgoDir>$(ProjectDir)..\build\pgo\</PgoDir>
+    <PgoDatabase>$(PgoDir)MinimizeEffect.pgd</PgoDatabase>
+  </PropertyGroup>
   <PropertyGroup>
     <OutDir>$(ProjectDir)..\build\bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)..\build\obj\App\$(Platform)\$(Configuration)\</IntDir>
@@ -124,6 +128,20 @@
       <PreprocessorDefinitions>MINIMIZE_EMBED_RELEASE_HOOK;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release' and '$(PgoMode)'=='Instrument'">
+    <Link>
+      <AdditionalOptions>/GENPROFILE:EXACT,PGD="$(PgoDatabase)" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release' and '$(PgoMode)'=='Use'">
+    <Link>
+      <AdditionalOptions>/USEPROFILE:PGD="$(PgoDatabase)" %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <Target Name="PreparePgo" BeforeTargets="Link" Condition="'$(Configuration)'=='Release' and '$(PgoMode)'!='Off'">
+    <MakeDir Directories="$(PgoDir)" />
+    <Error Condition="'$(PgoMode)'=='Use' and !Exists('$(PgoDatabase)')" Text="PGO database missing: $(PgoDatabase)" />
+  </Target>
   <ItemGroup>
     <ClCompile Include="third_party\miniz\miniz.c">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
