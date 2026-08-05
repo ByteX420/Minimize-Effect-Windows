@@ -33,6 +33,18 @@ struct VisualConstants {
   std::uint32_t texture_rotation = 0;
 };
 
+struct alignas(256) ConstantBlock256 {
+  std::uint8_t data[256]{};
+};
+
+struct FrameConstants {
+  ConstantBlock256 genie;         // Offset 0 B   (FirstConstant = 0)
+  ConstantBlock256 pixel;         // Offset 256 B (FirstConstant = 16)
+  ConstantBlock256 visual_shadow; // Offset 512 B (FirstConstant = 32)
+  ConstantBlock256 visual_main;   // Offset 768 B (FirstConstant = 48)
+};
+static_assert(sizeof(FrameConstants) == 1024);
+
 }  // namespace
 
 bool OverlayRenderer::Initialize(D3dDevice* device) {
@@ -40,20 +52,16 @@ bool OverlayRenderer::Initialize(D3dDevice* device) {
   device_ = device;
   if (device_ == nullptr || !CompileShaders() || !CreateStaticGrid()) return false;
 
+  if (FAILED(device_->context()->QueryInterface(IID_PPV_ARGS(&context1_))) || !context1_) {
+    return false;
+  }
+
   D3D11_BUFFER_DESC constants{};
-  constants.ByteWidth = sizeof(animation::GenieConstants);
+  constants.ByteWidth = sizeof(FrameConstants);
   constants.Usage = D3D11_USAGE_DYNAMIC;
   constants.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
   constants.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-  if (FAILED(device_->device()->CreateBuffer(&constants, nullptr, &genie_constant_buffer_))) {
-    return false;
-  }
-  constants.ByteWidth = sizeof(PixelConstants);
-  if (FAILED(device_->device()->CreateBuffer(&constants, nullptr, &pixel_constant_buffer_))) {
-    return false;
-  }
-  constants.ByteWidth = sizeof(VisualConstants);
-  if (FAILED(device_->device()->CreateBuffer(&constants, nullptr, &visual_constant_buffer_))) {
+  if (FAILED(device_->device()->CreateBuffer(&constants, nullptr, &constant_buffer_))) {
     return false;
   }
 
@@ -89,14 +97,13 @@ void OverlayRenderer::Shutdown() {
   blend_state_.Reset();
   mask_sampler_state_.Reset();
   sampler_state_.Reset();
-  visual_constant_buffer_.Reset();
-  pixel_constant_buffer_.Reset();
-  genie_constant_buffer_.Reset();
+  constant_buffer_.Reset();
   index_buffer_.Reset();
   vertex_buffer_.Reset();
   input_layout_.Reset();
   pixel_shader_.Reset();
   vertex_shader_.Reset();
+  context1_.Reset();
   index_count_ = 0;
   device_lost_ = false;
   device_ = nullptr;
@@ -185,54 +192,6 @@ bool OverlayRenderer::CreateStaticGrid() {
   return true;
 }
 
-bool OverlayRenderer::UpdateConstants(const animation::GenieConstants& genie_constants,
-                                      float opacity) {
-  ID3D11DeviceContext* context = device_->context();
-  D3D11_MAPPED_SUBRESOURCE mapped{};
-  HRESULT result =
-      context->Map(genie_constant_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-  if (FAILED(result)) {
-    MarkDeviceLost(result);
-    return false;
-  }
-  std::memcpy(mapped.pData, &genie_constants, sizeof(genie_constants));
-  context->Unmap(genie_constant_buffer_.Get(), 0);
-
-  result = context->Map(pixel_constant_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-  if (FAILED(result)) {
-    MarkDeviceLost(result);
-    return false;
-  }
-  const PixelConstants pixel_constants{.opacity = opacity};
-  std::memcpy(mapped.pData, &pixel_constants, sizeof(pixel_constants));
-  context->Unmap(pixel_constant_buffer_.Get(), 0);
-  return true;
-}
-
-bool OverlayRenderer::UpdateVisualConstants(const WindowVisualMetadata& metadata,
-                                            float texture_width, float texture_height,
-                                            float progress, bool render_shadow) {
-  const VisualConstants constants{
-      .texture_size = {std::max(texture_width, 1.0f), std::max(texture_height, 1.0f)},
-      .shadow_radius = std::max(metadata.shadow_radius, 0.0f),
-      .shadow_opacity = std::clamp(metadata.shadow_opacity, 0.0f, 1.0f),
-      .render_shadow = render_shadow ? 1U : 0U,
-      .animation_progress = std::clamp(progress, 0.0f, 1.0f),
-      .has_per_pixel_alpha = metadata.has_per_pixel_alpha ? 1U : 0U,
-      .texture_rotation = static_cast<std::uint32_t>(metadata.texture_rotation),
-  };
-  D3D11_MAPPED_SUBRESOURCE mapped{};
-  const HRESULT result = device_->context()->Map(visual_constant_buffer_.Get(), 0,
-                                                 D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-  if (FAILED(result)) {
-    MarkDeviceLost(result);
-    return false;
-  }
-  std::memcpy(mapped.pData, &constants, sizeof(constants));
-  device_->context()->Unmap(visual_constant_buffer_.Get(), 0);
-  return true;
-}
-
 bool OverlayRenderer::Render(const animation::GenieConstants& genie_constants,
                              ID3D11ShaderResourceView* texture,
                              ID3D11ShaderResourceView* mask_texture,
@@ -240,57 +199,96 @@ bool OverlayRenderer::Render(const animation::GenieConstants& genie_constants,
                              ID3D11RenderTargetView* render_target, UINT width, UINT height,
                              float opacity) {
   if (device_lost_ || texture == nullptr || mask_texture == nullptr || render_target == nullptr ||
-      !UpdateConstants(genie_constants, opacity)) {
+      context1_ == nullptr) {
     return false;
   }
-  ID3D11DeviceContext* context = device_->context();
-  D3D11_VIEWPORT viewport{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height),
-                          0.0f, 1.0f};
-  constexpr std::array<float, 4> kClear = {0.0f, 0.0f, 0.0f, 0.0f};
-  context->OMSetRenderTargets(1, &render_target, nullptr);
-  context->ClearRenderTargetView(render_target, kClear.data());
-  context->RSSetViewports(1, &viewport);
-  context->RSSetState(rasterizer_state_.Get());
-  constexpr UINT stride = sizeof(animation::GridVertex);
-  constexpr UINT offset = 0;
-  ID3D11Buffer* vertices = vertex_buffer_.Get();
-  context->IASetInputLayout(input_layout_.Get());
-  context->IASetVertexBuffers(0, 1, &vertices, &stride, &offset);
-  context->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0);
-  context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-  context->VSSetShader(vertex_shader_.Get(), nullptr, 0);
-  ID3D11Buffer* genie_constants_buffer = genie_constant_buffer_.Get();
-  context->VSSetConstantBuffers(0, 1, &genie_constants_buffer);
-  ID3D11Buffer* visual_constants_buffer = visual_constant_buffer_.Get();
-  context->VSSetConstantBuffers(2, 1, &visual_constants_buffer);
-  context->PSSetShader(pixel_shader_.Get(), nullptr, 0);
-  ID3D11Buffer* pixel_constants_buffer = pixel_constant_buffer_.Get();
-  context->PSSetConstantBuffers(1, 1, &pixel_constants_buffer);
-  context->PSSetConstantBuffers(2, 1, &visual_constants_buffer);
-  const std::array<ID3D11ShaderResourceView*, 2> resources = {texture, mask_texture};
-  context->PSSetShaderResources(0, static_cast<UINT>(resources.size()), resources.data());
-  const std::array<ID3D11SamplerState*, 2> samplers = {sampler_state_.Get(),
-                                                       mask_sampler_state_.Get()};
-  context->PSSetSamplers(0, static_cast<UINT>(samplers.size()), samplers.data());
-  constexpr std::array<float, 4> kBlend = {0.0f, 0.0f, 0.0f, 0.0f};
-  context->OMSetBlendState(blend_state_.Get(), kBlend.data(), 0xffffffff);
+
   const float texture_width = (genie_constants.source.right - genie_constants.source.left) * width;
   const float texture_height =
       (genie_constants.source.bottom - genie_constants.source.top) * height;
-  if (visual_metadata.shadow_radius > 0.0f && visual_metadata.shadow_opacity > 0.0f) {
-    if (!UpdateVisualConstants(visual_metadata, texture_width, texture_height,
-                               genie_constants.progress, true)) {
-      return false;
-    }
-    context->DrawIndexed(index_count_, 0, 0);
-  }
-  if (!UpdateVisualConstants(visual_metadata, texture_width, texture_height,
-                             genie_constants.progress, false)) {
+
+  auto build_visual = [&](bool shadow) {
+    return VisualConstants{
+        .texture_size = {std::max(texture_width, 1.0f), std::max(texture_height, 1.0f)},
+        .shadow_radius = std::max(visual_metadata.shadow_radius, 0.0f),
+        .shadow_opacity = std::clamp(visual_metadata.shadow_opacity, 0.0f, 1.0f),
+        .render_shadow = shadow ? 1U : 0U,
+        .animation_progress = std::clamp(genie_constants.progress, 0.0f, 1.0f),
+        .has_per_pixel_alpha = visual_metadata.has_per_pixel_alpha ? 1U : 0U,
+        .texture_rotation = static_cast<std::uint32_t>(visual_metadata.texture_rotation),
+    };
+  };
+
+  FrameConstants frame_constants{};
+  std::memcpy(frame_constants.genie.data, &genie_constants, sizeof(genie_constants));
+  const PixelConstants pixel_constants{.opacity = opacity};
+  std::memcpy(frame_constants.pixel.data, &pixel_constants, sizeof(pixel_constants));
+
+  const VisualConstants visual_shadow = build_visual(true);
+  std::memcpy(frame_constants.visual_shadow.data, &visual_shadow, sizeof(visual_shadow));
+
+  const VisualConstants visual_main = build_visual(false);
+  std::memcpy(frame_constants.visual_main.data, &visual_main, sizeof(visual_main));
+
+  D3D11_MAPPED_SUBRESOURCE mapped{};
+  const HRESULT hr =
+      context1_->Map(constant_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+  if (FAILED(hr)) {
+    MarkDeviceLost(hr);
     return false;
   }
-  context->DrawIndexed(index_count_, 0, 0);
+  std::memcpy(mapped.pData, &frame_constants, sizeof(frame_constants));
+  context1_->Unmap(constant_buffer_.Get(), 0);
+
+  D3D11_VIEWPORT viewport{0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height),
+                          0.0f, 1.0f};
+  constexpr std::array<float, 4> kClear = {0.0f, 0.0f, 0.0f, 0.0f};
+  context1_->OMSetRenderTargets(1, &render_target, nullptr);
+  context1_->ClearRenderTargetView(render_target, kClear.data());
+  context1_->RSSetViewports(1, &viewport);
+  context1_->RSSetState(rasterizer_state_.Get());
+
+  constexpr UINT stride = sizeof(animation::GridVertex);
+  constexpr UINT offset = 0;
+  ID3D11Buffer* vertices = vertex_buffer_.Get();
+  context1_->IASetInputLayout(input_layout_.Get());
+  context1_->IASetVertexBuffers(0, 1, &vertices, &stride, &offset);
+  context1_->IASetIndexBuffer(index_buffer_.Get(), DXGI_FORMAT_R16_UINT, 0);
+  context1_->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+  context1_->VSSetShader(vertex_shader_.Get(), nullptr, 0);
+  context1_->PSSetShader(pixel_shader_.Get(), nullptr, 0);
+
+  // SetConstantBuffers1 requires offsets and lengths aligned to 16 constants (256 bytes).
+  constexpr UINT kGenieFirst = 0, kGenieCount = 16;
+  constexpr UINT kPixelFirst = 16, kPixelCount = 16;
+  constexpr UINT kVisualShadowFirst = 32, kVisualCount = 16;
+  constexpr UINT kVisualMainFirst = 48;
+
+  ID3D11Buffer* buf = constant_buffer_.Get();
+  context1_->VSSetConstantBuffers1(0, 1, &buf, &kGenieFirst, &kGenieCount);
+  context1_->PSSetConstantBuffers1(1, 1, &buf, &kPixelFirst, &kPixelCount);
+
+  const std::array<ID3D11ShaderResourceView*, 2> resources = {texture, mask_texture};
+  context1_->PSSetShaderResources(0, static_cast<UINT>(resources.size()), resources.data());
+  const std::array<ID3D11SamplerState*, 2> samplers = {sampler_state_.Get(),
+                                                       mask_sampler_state_.Get()};
+  context1_->PSSetSamplers(0, static_cast<UINT>(samplers.size()), samplers.data());
+  constexpr std::array<float, 4> kBlend = {0.0f, 0.0f, 0.0f, 0.0f};
+  context1_->OMSetBlendState(blend_state_.Get(), kBlend.data(), 0xffffffff);
+
+  if (visual_metadata.shadow_radius > 0.0f && visual_metadata.shadow_opacity > 0.0f) {
+    context1_->VSSetConstantBuffers1(2, 1, &buf, &kVisualShadowFirst, &kVisualCount);
+    context1_->PSSetConstantBuffers1(2, 1, &buf, &kVisualShadowFirst, &kVisualCount);
+    context1_->DrawIndexed(index_count_, 0, 0);
+  }
+
+  context1_->VSSetConstantBuffers1(2, 1, &buf, &kVisualMainFirst, &kVisualCount);
+  context1_->PSSetConstantBuffers1(2, 1, &buf, &kVisualMainFirst, &kVisualCount);
+  context1_->DrawIndexed(index_count_, 0, 0);
+
   constexpr std::array<ID3D11ShaderResourceView*, 2> kNullResources = {nullptr, nullptr};
-  context->PSSetShaderResources(0, static_cast<UINT>(kNullResources.size()), kNullResources.data());
+  context1_->PSSetShaderResources(0, static_cast<UINT>(kNullResources.size()), kNullResources.data());
   return true;
 }
 

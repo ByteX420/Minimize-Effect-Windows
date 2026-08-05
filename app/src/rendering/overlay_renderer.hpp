@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <d3d11_4.h>
 #include <wrl/client.h>
@@ -25,22 +25,16 @@ public:
 private:
   [[nodiscard]] bool CompileShaders();
   [[nodiscard]] bool CreateStaticGrid();
-  [[nodiscard]] bool UpdateConstants(const animation::GenieConstants& genie_constants,
-                                     float opacity);
-  [[nodiscard]] bool UpdateVisualConstants(const WindowVisualMetadata& metadata,
-                                           float texture_width, float texture_height,
-                                           float progress, bool render_shadow);
   void MarkDeviceLost(HRESULT result);
 
   D3dDevice* device_ = nullptr;
+  Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_;
   Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
   Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
   Microsoft::WRL::ComPtr<ID3D11InputLayout> input_layout_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> index_buffer_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> genie_constant_buffer_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> pixel_constant_buffer_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> visual_constant_buffer_;
+  Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer_;
   Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state_;
   Microsoft::WRL::ComPtr<ID3D11SamplerState> mask_sampler_state_;
   Microsoft::WRL::ComPtr<ID3D11BlendState> blend_state_;
