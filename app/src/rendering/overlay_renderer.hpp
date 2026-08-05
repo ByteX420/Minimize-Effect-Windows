@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <d3d11_4.h>
 #include <wrl/client.h>
 
@@ -9,6 +10,7 @@
 namespace minimize::rendering {
 
 class D3dDevice;
+struct OverlayPipelineResources;
 
 class OverlayRenderer final {
 public:
@@ -23,23 +25,11 @@ public:
   [[nodiscard]] bool device_lost() const { return device_lost_; }
 
 private:
-  [[nodiscard]] bool CompileShaders();
-  [[nodiscard]] bool CreateStaticGrid();
   void MarkDeviceLost(HRESULT result);
 
   D3dDevice* device_ = nullptr;
-  Microsoft::WRL::ComPtr<ID3D11DeviceContext1> context1_;
-  Microsoft::WRL::ComPtr<ID3D11VertexShader> vertex_shader_;
-  Microsoft::WRL::ComPtr<ID3D11PixelShader> pixel_shader_;
-  Microsoft::WRL::ComPtr<ID3D11InputLayout> input_layout_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> vertex_buffer_;
-  Microsoft::WRL::ComPtr<ID3D11Buffer> index_buffer_;
+  std::shared_ptr<OverlayPipelineResources> pipeline_;
   Microsoft::WRL::ComPtr<ID3D11Buffer> constant_buffer_;
-  Microsoft::WRL::ComPtr<ID3D11SamplerState> sampler_state_;
-  Microsoft::WRL::ComPtr<ID3D11SamplerState> mask_sampler_state_;
-  Microsoft::WRL::ComPtr<ID3D11BlendState> blend_state_;
-  Microsoft::WRL::ComPtr<ID3D11RasterizerState> rasterizer_state_;
-  UINT index_count_ = 0;
   bool device_lost_ = false;
 };
 
