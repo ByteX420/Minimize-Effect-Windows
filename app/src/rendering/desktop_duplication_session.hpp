@@ -17,9 +17,11 @@ public:
     Microsoft::WRL::ComPtr<IDXGIOutputDuplication> duplication;
     Microsoft::WRL::ComPtr<ID3D11Texture2D> latest_frame;
     DXGI_FORMAT latest_frame_format = DXGI_FORMAT_UNKNOWN;
+    bool frame_held = false;
   };
 
   explicit DesktopDuplicationSession(D3dDevice* d3d_device);
+  ~DesktopDuplicationSession();
 
   [[nodiscard]] OutputCapture* AcquireFrameForRect(const RECT& screen_rect,
                                                    UINT first_frame_timeout_ms);
@@ -40,6 +42,7 @@ private:
   [[nodiscard]] bool InitializeOutputs();
   [[nodiscard]] OutputCapture* FindOutputForRect(const RECT& screen_rect);
   AcquireResult TryAcquireLatestFrame(OutputCapture* output, UINT timeout_ms);
+  void ReleaseHeldFrame(OutputCapture* output);
   void MarkDeviceLost(const wchar_t* context, HRESULT result);
 
   D3dDevice* d3d_device_ = nullptr;

@@ -22,6 +22,8 @@ bool ContainsRect(const RECT& outer, const RECT& inner) {
 DesktopDuplicationSession::DesktopDuplicationSession(D3dDevice* d3d_device)
     : d3d_device_(d3d_device) {}
 
+DesktopDuplicationSession::~DesktopDuplicationSession() { Reset(); }
+
 DesktopDuplicationSession::OutputCapture* DesktopDuplicationSession::AcquireFrameForRect(
     const RECT& screen_rect, UINT first_frame_timeout_ms) {
   for (int attempt = 0; attempt < 2; ++attempt) {
@@ -43,6 +45,10 @@ DesktopDuplicationSession::OutputCapture* DesktopDuplicationSession::AcquireFram
 DesktopDuplicationSession::AcquireResult DesktopDuplicationSession::TryAcquireLatestFrame(
     OutputCapture* output, UINT timeout_ms) {
   if (output == nullptr || output->duplication == nullptr) return AcquireResult::kFailed;
+  // AcquireNextFrame fails with DXGI_ERROR_INVALID_CALL while the previous frame is still
+  // held, so the held frame is released right before acquiring the next one. Desktop updates
+  // that happen while no frame is owned are accumulated and delivered with the next frame.
+  ReleaseHeldFrame(output);
   DXGI_OUTDUPL_FRAME_INFO frame_info{};
   Microsoft::WRL::ComPtr<IDXGIResource> desktop_resource;
   HRESULT result =
@@ -64,35 +70,18 @@ DesktopDuplicationSession::AcquireResult DesktopDuplicationSession::TryAcquireLa
   D3D11_TEXTURE2D_DESC desktop_description{};
   desktop_texture->GetDesc(&desktop_description);
   output->latest_frame_format = desktop_description.Format;
-  if (output->latest_frame != nullptr) {
-    D3D11_TEXTURE2D_DESC cached_description{};
-    output->latest_frame->GetDesc(&cached_description);
-    if (cached_description.Width != desktop_description.Width ||
-        cached_description.Height != desktop_description.Height ||
-        cached_description.Format != desktop_description.Format) {
-      output->latest_frame.Reset();
-    }
-  }
-  if (output->latest_frame == nullptr) {
-    D3D11_TEXTURE2D_DESC cached_description = desktop_description;
-    cached_description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-    cached_description.CPUAccessFlags = 0;
-    cached_description.MiscFlags = 0;
-    cached_description.Usage = D3D11_USAGE_DEFAULT;
-    result =
-        d3d_device_->device()->CreateTexture2D(&cached_description, nullptr, &output->latest_frame);
-    if (FAILED(result)) {
-      output->duplication->ReleaseFrame();
-      if (D3dDevice::IsDeviceLostError(result)) {
-        MarkDeviceLost(L"CreateTexture2D cached desktop frame", result);
-        return AcquireResult::kDeviceLost;
-      }
-      return AcquireResult::kFailed;
-    }
-  }
-  d3d_device_->context()->CopyResource(output->latest_frame.Get(), desktop_texture.Get());
-  output->duplication->ReleaseFrame();
+  // Keep the acquired desktop frame itself instead of copying the whole monitor into a
+  // cached texture; window-region copies read directly from this frame while it is held.
+  output->latest_frame = std::move(desktop_texture);
+  output->frame_held = true;
   return AcquireResult::kAcquired;
+}
+
+void DesktopDuplicationSession::ReleaseHeldFrame(OutputCapture* output) {
+  if (output == nullptr || !output->frame_held) return;
+  (void)output->duplication->ReleaseFrame();
+  output->frame_held = false;
+  output->latest_frame.Reset();
 }
 
 bool DesktopDuplicationSession::InitializeOutputs() {
@@ -137,10 +126,13 @@ DesktopDuplicationSession::OutputCapture* DesktopDuplicationSession::FindOutputF
 }
 
 void DesktopDuplicationSession::ClearHistory() {
-  for (OutputCapture& output : outputs_) output.latest_frame.Reset();
+  for (OutputCapture& output : outputs_) ReleaseHeldFrame(&output);
 }
 
-void DesktopDuplicationSession::Reset() { outputs_.clear(); }
+void DesktopDuplicationSession::Reset() {
+  for (OutputCapture& output : outputs_) ReleaseHeldFrame(&output);
+  outputs_.clear();
+}
 
 void DesktopDuplicationSession::MarkDeviceLost(const wchar_t* context, HRESULT result) {
   device_lost_ = true;
