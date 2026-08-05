@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <chrono>
 #include <windows.h>
@@ -32,6 +32,7 @@ struct AnimationRun {
   RECT live_animation_bounds{};
   ULONGLONG last_animation_texture_refresh_ms = 0;
   HMONITOR animation_monitor = nullptr;
+  ULONGLONG next_monitor_validation_ms = 0;
   std::chrono::steady_clock::duration animation_frame_interval{};
   std::chrono::steady_clock::time_point next_animation_frame_time{};
   bool live_animation_capture_enabled = false;

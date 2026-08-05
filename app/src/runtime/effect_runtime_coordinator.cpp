@@ -217,7 +217,13 @@ void ApplicationRuntime::UpdateRuntime() {
 }
 
 void ApplicationRuntime::HandleDisplayChange() {
-  for (auto& run : runs_) run.animation_monitor = nullptr;
+  for (auto& run : runs_) {
+    run.animation_monitor = nullptr;
+    run.next_monitor_validation_ms = 0;
+    if (run.overlay.active()) {
+      frame_scheduler_.UpdateMonitor(run);
+    }
+  }
   settings_window_.InvalidateOpenWindowsSnapshot();
   settings_window_.ForceRender();
 }
@@ -319,7 +325,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
 
     bool animation_active = false;
     if (was_active) {
-      UpdateAnimationFramePacingMonitor(i);
+      frame_scheduler_.ValidateMonitorIfDue(slot, GetTickCount64());
       if (IsAnimationFrameDue(i)) {
         animation_active = slot.overlay.Tick();
         AdvanceAnimationFrameDeadline(i);
@@ -418,10 +424,6 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
 void ApplicationRuntime::ResetAnimationFramePacing(int run_index, HWND window,
                                                    const RECT& animation_bounds) {
   frame_scheduler_.Reset(runs_[run_index], window, animation_bounds);
-}
-
-void ApplicationRuntime::UpdateAnimationFramePacingMonitor(int run_index) {
-  frame_scheduler_.UpdateMonitor(runs_[run_index]);
 }
 
 bool ApplicationRuntime::IsAnimationFrameDue(int run_index) const {

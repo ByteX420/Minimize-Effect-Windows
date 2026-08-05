@@ -43,13 +43,11 @@ void FrameScheduler::Wake() {
 }
 
 void FrameScheduler::Reset(AnimationRun& run, HWND window, const RECT& animation_bounds) {
+  (void)window;
   BeginFallbackTimerResolution();
   run.live_animation_bounds = animation_bounds;
-  if (window != nullptr && IsWindow(window)) {
-    const auto current_bounds = platform::GetExtendedFrameBounds(window);
-    if (current_bounds.has_value()) run.live_animation_bounds = *current_bounds;
-  }
   run.animation_monitor = nullptr;
+  run.next_monitor_validation_ms = 0;
   run.animation_frame_interval = std::chrono::steady_clock::duration::zero();
   run.next_animation_frame_time = std::chrono::steady_clock::now();
   UpdateMonitor(run);
@@ -82,6 +80,15 @@ void FrameScheduler::UpdateMonitor(AnimationRun& run) {
   }
   run.animation_frame_interval = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
       std::chrono::duration<double>(1.0 / *refresh_rate));
+}
+
+void FrameScheduler::ValidateMonitorIfDue(AnimationRun& run, ULONGLONG now_ms) {
+  constexpr ULONGLONG kMonitorValidationIntervalMs = 500;
+  if (run.next_monitor_validation_ms != 0 && now_ms < run.next_monitor_validation_ms) {
+    return;
+  }
+  run.next_monitor_validation_ms = now_ms + kMonitorValidationIntervalMs;
+  UpdateMonitor(run);
 }
 
 bool FrameScheduler::IsDue(const AnimationRun& run) const {

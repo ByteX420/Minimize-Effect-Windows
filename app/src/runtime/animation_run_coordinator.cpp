@@ -180,6 +180,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
     slot.auto_hide_taskbar_revealed = false;
   }
   slot.animation_monitor = nullptr;
+  slot.next_monitor_validation_ms = 0;
   slot.animation_frame_interval = std::chrono::steady_clock::duration::zero();
   SetRunState(run_index, runtime::RunState::kIdle);
 

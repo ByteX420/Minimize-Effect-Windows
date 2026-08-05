@@ -152,7 +152,6 @@ private:
   [[nodiscard]] features::RenderingPressure GetRenderingPressure() const;
   [[nodiscard]] HWND GetOverlayWindow() const;
   void ResetAnimationFramePacing(int run_index, HWND window, const RECT& animation_bounds);
-  void UpdateAnimationFramePacingMonitor(int run_index);
   [[nodiscard]] bool IsAnimationFrameDue(int run_index) const;
   void AdvanceAnimationFrameDeadline(int run_index);
   void WaitForAnimationFrameOrMessage();
@@ -186,6 +185,7 @@ private:
   ULONGLONG bulk_window_request_started_ms_ = 0;
   std::unordered_map<HWND, ULONGLONG> minimize_suppressed_until_;
   ULONGLONG last_snapshot_refresh_ms_ = 0;
+  ULONGLONG last_restore_watchdog_ms_ = 0;
   ULONGLONG last_run_prewarm_ms_ = 0;
   runtime::RendererRecovery renderer_recovery_;
   bool effect_runtime_active_ = false;

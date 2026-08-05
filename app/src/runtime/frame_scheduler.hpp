@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <windows.h>
 #include <wil/resource.h>
@@ -21,6 +21,7 @@ public:
   void Wake();
   void Reset(AnimationRun& run, HWND window, const RECT& animation_bounds);
   void UpdateMonitor(AnimationRun& run);
+  void ValidateMonitorIfDue(AnimationRun& run, ULONGLONG now_ms);
   [[nodiscard]] bool IsDue(const AnimationRun& run) const;
   [[nodiscard]] unsigned int Advance(AnimationRun& run);
   void Wait(const AnimationRunPool& runs, HANDLE settings_frame_waitable_object = nullptr);
