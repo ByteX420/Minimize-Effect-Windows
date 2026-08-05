@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <d3d11_4.h>
 #include <dxgi1_6.h>
@@ -18,6 +18,8 @@ public:
     Microsoft::WRL::ComPtr<ID3D11Texture2D> latest_frame;
     DXGI_FORMAT latest_frame_format = DXGI_FORMAT_UNKNOWN;
     bool frame_held = false;
+    std::vector<RECT> dirty_rects;
+    std::uint64_t frame_generation = 0;
   };
 
   explicit DesktopDuplicationSession(D3dDevice* d3d_device);
@@ -43,6 +45,7 @@ private:
   [[nodiscard]] bool InitializeOutputs();
   [[nodiscard]] OutputCapture* FindOutputForRect(const RECT& screen_rect);
   AcquireResult TryAcquireLatestFrame(OutputCapture* output, UINT timeout_ms);
+  void CollectFrameUpdateRegions(OutputCapture* output, const DXGI_OUTDUPL_FRAME_INFO& frame_info);
   void ReleaseHeldFrame(OutputCapture* output);
   void MarkDeviceLost(const wchar_t* context, HRESULT result);
 

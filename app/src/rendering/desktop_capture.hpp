@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <atomic>
 #include <d3d11_4.h>
@@ -20,6 +20,7 @@ struct CapturedTexture {
   Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> mask_shader_resource_view;
   minimize::animation::SizeF size;
   WindowVisualMetadata visual_metadata;
+  std::uint64_t frame_generation = 0;
 };
 
 class DesktopCapture {

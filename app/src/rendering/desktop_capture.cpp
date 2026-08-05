@@ -470,6 +470,7 @@ bool DesktopCapture::CopyRegionFromFrame(OutputCapture* output, const RECT& scre
         .height = static_cast<float>(height),
     };
     captured_texture->visual_metadata.texture_rotation = copy_region.texture_rotation;
+    captured_texture->frame_generation = output->frame_generation;
     return true;
   }
 
@@ -526,6 +527,7 @@ bool DesktopCapture::CopyRegionFromFrame(OutputCapture* output, const RECT& scre
         .width = static_cast<float>(width),
         .height = static_cast<float>(height),
     };
+    captured_texture->frame_generation = output->frame_generation;
     return true;
   }
   return false;
@@ -569,6 +571,7 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
     d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
                                                   source_frame, 0, &copy_region.source_box);
     captured_texture->visual_metadata.texture_rotation = copy_region.texture_rotation;
+    captured_texture->frame_generation = output->frame_generation;
     return true;
   }
 
@@ -576,6 +579,38 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
     if (texture_desc.Width != static_cast<UINT>(width) ||
         texture_desc.Height != static_cast<UINT>(height)) {
       return false;
+    }
+    const bool can_use_dirty_rects =
+        (captured_texture->frame_generation + 1 == output->frame_generation) &&
+        !output->dirty_rects.empty();
+
+    if (can_use_dirty_rects) {
+      // Dirty rects are output-local space (relative to desktop_coordinates origin).
+      const RECT clipped_rect_output{
+          .left = clipped_rect.left - output->desktop_coordinates.left,
+          .top = clipped_rect.top - output->desktop_coordinates.top,
+          .right = clipped_rect.right - output->desktop_coordinates.left,
+          .bottom = clipped_rect.bottom - output->desktop_coordinates.top,
+      };
+      for (const RECT& dirty : output->dirty_rects) {
+        RECT clipped_dirty{};
+        if (!IntersectRect(&clipped_dirty, &dirty, &clipped_rect_output)) continue;
+        D3D11_BOX source_box{};
+        source_box.left = static_cast<UINT>(clipped_dirty.left);
+        source_box.top = static_cast<UINT>(clipped_dirty.top);
+        source_box.front = 0;
+        source_box.right = static_cast<UINT>(clipped_dirty.right);
+        source_box.bottom = static_cast<UINT>(clipped_dirty.bottom);
+        source_box.back = 1;
+        d3d_device_->context()->CopySubresourceRegion(
+            captured_texture->texture.Get(), 0,
+            static_cast<UINT>(clipped_dirty.left - clipped_rect_output.left),
+            static_cast<UINT>(clipped_dirty.top - clipped_rect_output.top), 0, source_frame, 0,
+            &source_box);
+      }
+      captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
+      captured_texture->frame_generation = output->frame_generation;
+      return true;
     }
     D3D11_BOX source_box{};
     source_box.left = static_cast<UINT>(clipped_rect.left - output->desktop_coordinates.left);
@@ -588,6 +623,7 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
     d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
                                                   source_frame, 0, &source_box);
     captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
+    captured_texture->frame_generation = output->frame_generation;
     return true;
   }
   return false;

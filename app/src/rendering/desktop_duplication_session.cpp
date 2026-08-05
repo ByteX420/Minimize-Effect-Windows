@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "rendering/desktop_duplication_session.hpp"
 
@@ -78,7 +78,58 @@ DesktopDuplicationSession::AcquireResult DesktopDuplicationSession::TryAcquireLa
   // cached texture; window-region copies read directly from this frame while it is held.
   output->latest_frame = std::move(desktop_texture);
   output->frame_held = true;
+  ++output->frame_generation;
+  CollectFrameUpdateRegions(output, frame_info);
   return AcquireResult::kAcquired;
+}
+
+void DesktopDuplicationSession::CollectFrameUpdateRegions(OutputCapture* output,
+                                                          const DXGI_OUTDUPL_FRAME_INFO& frame_info) {
+  (void)frame_info;
+  output->dirty_rects.clear();
+  if (output == nullptr || output->duplication == nullptr) return;
+  // Dirty and move rectangles are only valid while the frame is held, so they are collected
+  // here. Move destinations already contain the moved pixels in the new frame, so they are
+  // treated like dirty regions for incremental copies.
+  std::vector<RECT> dirty_rects(64);
+  UINT dirty_bytes_required = 0;
+  HRESULT result = output->duplication->GetFrameDirtyRects(
+      static_cast<UINT>(dirty_rects.size() * sizeof(RECT)), dirty_rects.data(),
+      &dirty_bytes_required);
+  if (result == DXGI_ERROR_MORE_DATA && dirty_bytes_required > 0) {
+    dirty_rects.resize(dirty_bytes_required / sizeof(RECT));
+    result = output->duplication->GetFrameDirtyRects(
+        dirty_bytes_required, dirty_rects.data(), &dirty_bytes_required);
+  }
+  if (SUCCEEDED(result)) {
+    dirty_rects.resize(dirty_bytes_required / sizeof(RECT));
+  } else {
+    dirty_rects.clear();
+  }
+
+  std::vector<DXGI_OUTDUPL_MOVE_RECT> move_rects(64);
+  UINT move_bytes_required = 0;
+  result = output->duplication->GetFrameMoveRects(
+      static_cast<UINT>(move_rects.size() * sizeof(DXGI_OUTDUPL_MOVE_RECT)), move_rects.data(),
+      &move_bytes_required);
+  if (result == DXGI_ERROR_MORE_DATA && move_bytes_required > 0) {
+    move_rects.resize(move_bytes_required / sizeof(DXGI_OUTDUPL_MOVE_RECT));
+    result = output->duplication->GetFrameMoveRects(
+        move_bytes_required, move_rects.data(), &move_bytes_required);
+  }
+  if (SUCCEEDED(result)) {
+    move_rects.resize(move_bytes_required / sizeof(DXGI_OUTDUPL_MOVE_RECT));
+  } else {
+    move_rects.clear();
+  }
+
+  const UINT dirty_count = static_cast<UINT>(dirty_rects.size());
+  const UINT move_count = static_cast<UINT>(move_rects.size());
+  output->dirty_rects.reserve(dirty_count + move_count);
+  output->dirty_rects.insert(output->dirty_rects.end(), dirty_rects.begin(), dirty_rects.end());
+  for (UINT i = 0; i < move_count; ++i) {
+    output->dirty_rects.push_back(move_rects[i].DestinationRect);
+  }
 }
 
 void DesktopDuplicationSession::ReleaseHeldFrame(OutputCapture* output) {
@@ -86,6 +137,7 @@ void DesktopDuplicationSession::ReleaseHeldFrame(OutputCapture* output) {
   (void)output->duplication->ReleaseFrame();
   output->frame_held = false;
   output->latest_frame.Reset();
+  output->dirty_rects.clear();
 }
 
 bool DesktopDuplicationSession::InitializeOutputs() {
