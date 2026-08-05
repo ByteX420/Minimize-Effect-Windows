@@ -214,9 +214,16 @@ float2 source_texcoord(float2 texcoord) {
 
 float4 PixelMain(float4 position : SV_POSITION, float2 texcoord : TEXCOORD0) : SV_TARGET {
   if (render_shadow != 0) {
+    float center_alpha = shape_alpha(texcoord);
+    // For standard opaque windows (has_per_pixel_alpha == 0), the main window pass drawn
+    // immediately after completely occludes the interior. Skipping multi-tap blur samples
+    // inside the solid interior yields identical visual output while saving up to 90% GPU work.
+    if (has_per_pixel_alpha == 0 && center_alpha >= 0.999f) {
+      return float4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
     float remaining = 1.0f - saturate(animation_progress);
     float2 radius = (shadow_radius * remaining) / max(texture_size, float2(1.0f, 1.0f));
-    float alpha = shape_alpha(texcoord) * 0.20f;
+    float alpha = center_alpha * 0.20f;
     alpha += (shape_alpha(texcoord + float2(radius.x * 0.33f, 0.0f)) +
               shape_alpha(texcoord - float2(radius.x * 0.33f, 0.0f)) +
               shape_alpha(texcoord + float2(0.0f, radius.y * 0.33f)) +
