@@ -25,7 +25,8 @@ DesktopDuplicationSession::DesktopDuplicationSession(D3dDevice* d3d_device)
 DesktopDuplicationSession::~DesktopDuplicationSession() { Reset(); }
 
 DesktopDuplicationSession::OutputCapture* DesktopDuplicationSession::AcquireFrameForRect(
-    const RECT& screen_rect, UINT first_frame_timeout_ms) {
+    const RECT& screen_rect, UINT first_frame_timeout_ms, bool* frame_updated) {
+  if (frame_updated != nullptr) *frame_updated = false;
   for (int attempt = 0; attempt < 2; ++attempt) {
     if (outputs_.empty() && !InitializeOutputs()) return nullptr;
     OutputCapture* output = FindOutputForRect(screen_rect);
@@ -36,8 +37,11 @@ DesktopDuplicationSession::OutputCapture* DesktopDuplicationSession::AcquireFram
       Reset();
       continue;
     }
-    if (result == AcquireResult::kDeviceLost) return nullptr;
-    return output->latest_frame != nullptr ? output : nullptr;
+    if (result == AcquireResult::kDeviceLost || result == AcquireResult::kFailed) return nullptr;
+    if (result == AcquireResult::kAcquired && frame_updated != nullptr) {
+      *frame_updated = true;
+    }
+    return output;
   }
   return nullptr;
 }

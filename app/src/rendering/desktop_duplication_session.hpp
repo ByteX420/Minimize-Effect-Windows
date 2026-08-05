@@ -24,7 +24,8 @@ public:
   ~DesktopDuplicationSession();
 
   [[nodiscard]] OutputCapture* AcquireFrameForRect(const RECT& screen_rect,
-                                                   UINT first_frame_timeout_ms);
+                                                   UINT first_frame_timeout_ms,
+                                                   bool* frame_updated = nullptr);
   void ClearHistory();
   void Reset();
   [[nodiscard]] bool device_lost() const { return device_lost_; }

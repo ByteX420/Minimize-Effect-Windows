@@ -388,9 +388,16 @@ bool DesktopCapture::RefreshCapturedTexture(const RECT& screen_rect,
       capture_geometry::Width(screen_rect) <= 0 || capture_geometry::Height(screen_rect) <= 0) {
     return false;
   }
-  OutputCapture* output = duplication_session_.AcquireFrameForRect(screen_rect, 0);
+  bool frame_updated = false;
+  OutputCapture* output = duplication_session_.AcquireFrameForRect(screen_rect, 0, &frame_updated);
   if (output == nullptr) {
     return false;
+  }
+
+  // A WAIT_TIMEOUT means the desktop has not changed, so the texture still holds the current
+  // content; no GPU copy is needed.
+  if (!frame_updated) {
+    return true;
   }
 
   if (output->latest_frame == nullptr) {
