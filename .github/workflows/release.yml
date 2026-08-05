@@ -349,24 +349,19 @@ jobs:
 
             Automated **stable** release build (Windows x64, MultiByte, LTCG /O2).
 
-            ### Changes in 1.5.0
-            - Configurable hotkeys to minimize and restore all windows with synchronized bulk animations.
-            - Configurable reversal animation with custom duration, easing curves and bezier controls.
-            - Auto-hide taskbar detection during minimize animations for a smooth landing.
-            - Direct GPU VRAM texture copying via CopySubresourceRegion for drastically reduced capture latency.
-            - Precompiled HLSL shaders at build time, eliminating runtime D3DCompile and d3dcompiler_47.dll.
-            - In-memory window state management replacing SetPropW kernel atom injection.
-            - Native Win32 WM_NCHITTEST titlebar dragging with DWM Snap Layouts support.
-            - Matched overlay window corner rounding with DWM corner preferences.
-            - Pixel-exact animation overlays across mixed-DPI displays.
-            - Cleaner update progress display with compact loading animation and download size indicator.
-            - Prevented sequential window activation and visual delay during minimize-all.
-            - Reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
-            - Smooth frame pacing, animation rendering, and context menu input handling.
-            - Robust update handover that aborts on lock acquisition or runtime service failure.
-            - Event-driven power setting notifications instead of polling loops.
-            - Modern C++20 std::format formatting and in-process zip extraction via miniz.
-            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
+            ### Changes in 1.5.1
+            - Unified D3D11.1 constant buffer architecture with 256-byte aligned slices reducing map calls by 75%.
+            - Eliminated per-frame DirectComposition Commit calls for reduced active CPU overhead.
+            - Added opaque window shadow fast path in pixel shader, reducing blur sampling work by up to 90%.
+            - Reused pre-minimize captured textures, SRVs, and mask resources during minimize transitions.
+            - Incremental GPU refresh copies using DXGI Desktop Duplication dirty and move rects with sequence tracking.
+            - Skipped redundant GPU copies when Desktop Duplication reports no new frames.
+            - Shared immutable pipeline resources and static state binding across all overlay renderers.
+            - Event-driven deadline-based idle loop reducing idle CPU usage to 0.00%.
+            - Single-query window visual metadata caching per capture transaction.
+            - Throttled monitor validation in frame scheduler hotpath to a 500ms schedule.
+            - Throttled restore fallback watchdog polling to a maximum of 4 checks per second.
+            - Profile-Guided Optimization (PGO / PGI + PGU) build configuration targets and CI parameters.
 
             ### Install
             1. Download **MinimizeEffect-windows-x64.zip**
@@ -404,24 +399,19 @@ jobs:
             Public **${{ steps.version.outputs.channel }} pre-release** built from the `beta` branch.
             This build may be unstable and does not replace the latest stable download.
 
-            ### Changes in 1.5.0
-            - Configurable hotkeys to minimize and restore all windows with synchronized bulk animations.
-            - Configurable reversal animation with custom duration, easing curves and bezier controls.
-            - Auto-hide taskbar detection during minimize animations for a smooth landing.
-            - Direct GPU VRAM texture copying via CopySubresourceRegion for drastically reduced capture latency.
-            - Precompiled HLSL shaders at build time, eliminating runtime D3DCompile and d3dcompiler_47.dll.
-            - In-memory window state management replacing SetPropW kernel atom injection.
-            - Native Win32 WM_NCHITTEST titlebar dragging with DWM Snap Layouts support.
-            - Matched overlay window corner rounding with DWM corner preferences.
-            - Pixel-exact animation overlays across mixed-DPI displays.
-            - Cleaner update progress display with compact loading animation and download size indicator.
-            - Prevented sequential window activation and visual delay during minimize-all.
-            - Reliable taskbar app-button targeting for centered taskbars and multi-monitor layouts.
-            - Smooth frame pacing, animation rendering, and context menu input handling.
-            - Robust update handover that aborts on lock acquisition or runtime service failure.
-            - Event-driven power setting notifications instead of polling loops.
-            - Modern C++20 std::format formatting and in-process zip extraction via miniz.
-            - DirectComposition tree and Windows resources standardized with Microsoft WIL RAII helpers.
+            ### Changes in 1.5.1
+            - Unified D3D11.1 constant buffer architecture with 256-byte aligned slices reducing map calls by 75%.
+            - Eliminated per-frame DirectComposition Commit calls for reduced active CPU overhead.
+            - Added opaque window shadow fast path in pixel shader, reducing blur sampling work by up to 90%.
+            - Reused pre-minimize captured textures, SRVs, and mask resources during minimize transitions.
+            - Incremental GPU refresh copies using DXGI Desktop Duplication dirty and move rects with sequence tracking.
+            - Skipped redundant GPU copies when Desktop Duplication reports no new frames.
+            - Shared immutable pipeline resources and static state binding across all overlay renderers.
+            - Event-driven deadline-based idle loop reducing idle CPU usage to 0.00%.
+            - Single-query window visual metadata caching per capture transaction.
+            - Throttled monitor validation in frame scheduler hotpath to a 500ms schedule.
+            - Throttled restore fallback watchdog polling to a maximum of 4 checks per second.
+            - Profile-Guided Optimization (PGO / PGI + PGU) build configuration targets and CI parameters.
 
             ### Install
             1. Download **${{ steps.package.outputs.name }}**
