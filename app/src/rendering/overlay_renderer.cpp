@@ -38,10 +38,10 @@ struct alignas(256) ConstantBlock256 {
 };
 
 struct FrameConstants {
-  ConstantBlock256 genie;         // Offset 0 B   (FirstConstant = 0)
-  ConstantBlock256 pixel;         // Offset 256 B (FirstConstant = 16)
-  ConstantBlock256 visual_shadow; // Offset 512 B (FirstConstant = 32)
-  ConstantBlock256 visual_main;   // Offset 768 B (FirstConstant = 48)
+  ConstantBlock256 genie;          // Offset 0 B   (FirstConstant = 0)
+  ConstantBlock256 pixel;          // Offset 256 B (FirstConstant = 16)
+  ConstantBlock256 visual_shadow;  // Offset 512 B (FirstConstant = 32)
+  ConstantBlock256 visual_main;    // Offset 768 B (FirstConstant = 48)
 };
 static_assert(sizeof(FrameConstants) == 1024);
 
@@ -103,27 +103,10 @@ namespace {
 std::mutex g_pipeline_mutex;
 std::weak_ptr<OverlayPipelineResources> g_pipeline;
 
-std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* device) {
-  if (device == nullptr) {
-    return {};
-  }
-
-  std::lock_guard lock(g_pipeline_mutex);
-  if (auto existing = g_pipeline.lock();
-      existing && existing->device.Get() == device->device()) {
-    return existing;
-  }
-
-  auto pipeline = std::make_shared<OverlayPipelineResources>();
-  pipeline->device = device->device();
-
-  if (FAILED(device->context()->QueryInterface(IID_PPV_ARGS(&pipeline->context)))) {
-    return {};
-  }
-
-  if (FAILED(device->device()->CreateVertexShader(
-          g_genie_vertex_shader, sizeof(g_genie_vertex_shader), nullptr, &pipeline->vertex_shader))) {
-    return {};
+bool CreateShaderResources(ID3D11Device* device, OverlayPipelineResources* pipeline) {
+  if (FAILED(device->CreateVertexShader(g_genie_vertex_shader, sizeof(g_genie_vertex_shader),
+                                        nullptr, &pipeline->vertex_shader))) {
+    return false;
   }
 
   constexpr std::array<D3D11_INPUT_ELEMENT_DESC, 1> kElements = {
@@ -131,17 +114,17 @@ std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* devi
                                D3D11_INPUT_PER_VERTEX_DATA, 0},
   };
 
-  if (FAILED(device->device()->CreateInputLayout(
-          kElements.data(), static_cast<UINT>(kElements.size()),
-          g_genie_vertex_shader, sizeof(g_genie_vertex_shader), &pipeline->input_layout))) {
-    return {};
+  if (FAILED(device->CreateInputLayout(kElements.data(), static_cast<UINT>(kElements.size()),
+                                       g_genie_vertex_shader, sizeof(g_genie_vertex_shader),
+                                       &pipeline->input_layout))) {
+    return false;
   }
 
-  if (FAILED(device->device()->CreatePixelShader(
-          g_genie_pixel_shader, sizeof(g_genie_pixel_shader), nullptr, &pipeline->pixel_shader))) {
-    return {};
-  }
+  return SUCCEEDED(device->CreatePixelShader(g_genie_pixel_shader, sizeof(g_genie_pixel_shader),
+                                             nullptr, &pipeline->pixel_shader));
+}
 
+bool CreateGridBuffers(ID3D11Device* device, OverlayPipelineResources* pipeline) {
   std::vector<animation::GridVertex> vertices;
   vertices.reserve(kGridVertexCount);
   for (UINT row = 0; row <= kGridSegments; ++row) {
@@ -159,8 +142,7 @@ std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* devi
     for (UINT column = 0; column < kGridSegments; ++column) {
       const auto lower_left = static_cast<std::uint16_t>(row * (kGridSegments + 1) + column);
       const auto lower_right = static_cast<std::uint16_t>(lower_left + 1);
-      const auto upper_left =
-          static_cast<std::uint16_t>((row + 1) * (kGridSegments + 1) + column);
+      const auto upper_left = static_cast<std::uint16_t>((row + 1) * (kGridSegments + 1) + column);
       const auto upper_right = static_cast<std::uint16_t>(upper_left + 1);
       indices.insert(indices.end(),
                      {lower_left, upper_left, lower_right, lower_right, upper_left, upper_right});
@@ -172,8 +154,8 @@ std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* devi
   vertex_desc.Usage = D3D11_USAGE_IMMUTABLE;
   vertex_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
   D3D11_SUBRESOURCE_DATA vertex_data{.pSysMem = vertices.data()};
-  if (FAILED(device->device()->CreateBuffer(&vertex_desc, &vertex_data, &pipeline->vertex_buffer))) {
-    return {};
+  if (FAILED(device->CreateBuffer(&vertex_desc, &vertex_data, &pipeline->vertex_buffer))) {
+    return false;
   }
 
   D3D11_BUFFER_DESC index_desc{};
@@ -181,24 +163,27 @@ std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* devi
   index_desc.Usage = D3D11_USAGE_IMMUTABLE;
   index_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
   D3D11_SUBRESOURCE_DATA index_data{.pSysMem = indices.data()};
-  if (FAILED(device->device()->CreateBuffer(&index_desc, &index_data, &pipeline->index_buffer))) {
-    return {};
+  if (FAILED(device->CreateBuffer(&index_desc, &index_data, &pipeline->index_buffer))) {
+    return false;
   }
 
   pipeline->index_count = kGridIndexCount;
+  return true;
+}
 
+bool CreatePipelineStates(ID3D11Device* device, OverlayPipelineResources* pipeline) {
   D3D11_SAMPLER_DESC sampler{};
   sampler.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
   sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
   sampler.ComparisonFunc = D3D11_COMPARISON_NEVER;
   sampler.MaxLOD = D3D11_FLOAT32_MAX;
-  if (FAILED(device->device()->CreateSamplerState(&sampler, &pipeline->sampler_state))) {
-    return {};
+  if (FAILED(device->CreateSamplerState(&sampler, &pipeline->sampler_state))) {
+    return false;
   }
 
   sampler.AddressU = sampler.AddressV = sampler.AddressW = D3D11_TEXTURE_ADDRESS_BORDER;
-  if (FAILED(device->device()->CreateSamplerState(&sampler, &pipeline->mask_sampler_state))) {
-    return {};
+  if (FAILED(device->CreateSamplerState(&sampler, &pipeline->mask_sampler_state))) {
+    return false;
   }
 
   D3D11_BLEND_DESC blend{};
@@ -210,15 +195,35 @@ std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* devi
   blend.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
   blend.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
   blend.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-  if (FAILED(device->device()->CreateBlendState(&blend, &pipeline->blend_state))) {
-    return {};
+  if (FAILED(device->CreateBlendState(&blend, &pipeline->blend_state))) {
+    return false;
   }
 
   D3D11_RASTERIZER_DESC rasterizer{};
   rasterizer.FillMode = D3D11_FILL_SOLID;
   rasterizer.CullMode = D3D11_CULL_NONE;
   rasterizer.DepthClipEnable = TRUE;
-  if (FAILED(device->device()->CreateRasterizerState(&rasterizer, &pipeline->rasterizer_state))) {
+  return SUCCEEDED(device->CreateRasterizerState(&rasterizer, &pipeline->rasterizer_state));
+}
+
+std::shared_ptr<OverlayPipelineResources> AcquireOverlayPipeline(D3dDevice* device) {
+  if (device == nullptr) return {};
+
+  std::lock_guard lock(g_pipeline_mutex);
+  if (auto existing = g_pipeline.lock(); existing && existing->device.Get() == device->device()) {
+    return existing;
+  }
+
+  auto pipeline = std::make_shared<OverlayPipelineResources>();
+  pipeline->device = device->device();
+
+  if (FAILED(device->context()->QueryInterface(IID_PPV_ARGS(&pipeline->context)))) {
+    return {};
+  }
+
+  if (!CreateShaderResources(device->device(), pipeline.get()) ||
+      !CreateGridBuffers(device->device(), pipeline.get()) ||
+      !CreatePipelineStates(device->device(), pipeline.get())) {
     return {};
   }
 
@@ -297,8 +302,7 @@ bool OverlayRenderer::Render(const animation::GenieConstants& genie_constants,
   std::memcpy(frame_constants.visual_main.data, &visual_main, sizeof(visual_main));
 
   D3D11_MAPPED_SUBRESOURCE mapped{};
-  const HRESULT hr =
-      context1->Map(constant_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+  const HRESULT hr = context1->Map(constant_buffer_.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
   if (FAILED(hr)) {
     MarkDeviceLost(hr);
     return false;
@@ -339,7 +343,8 @@ bool OverlayRenderer::Render(const animation::GenieConstants& genie_constants,
   context1->DrawIndexed(pipeline_->index_count, 0, 0);
 
   constexpr std::array<ID3D11ShaderResourceView*, 2> kNullResources = {nullptr, nullptr};
-  context1->PSSetShaderResources(0, static_cast<UINT>(kNullResources.size()), kNullResources.data());
+  context1->PSSetShaderResources(0, static_cast<UINT>(kNullResources.size()),
+                                 kNullResources.data());
   return true;
 }
 

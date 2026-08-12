@@ -1,7 +1,7 @@
+#include <dwmapi.h>
 #include <format>
 #include <iterator>
 #include <string_view>
-#include <dwmapi.h>
 #include <windows.h>
 
 #include "../app/src/core/logger.hpp"
@@ -36,19 +36,18 @@ constexpr wchar_t kOverlayClassName[] = L"MinimizeEffectOverlayWindow";
 }
 
 [[nodiscard]] UINT GetQueryWindowStateMessage() noexcept {
-  static const UINT msg = RegisterWindowMessageW(
-      minimize::platform::windows::properties::kQueryWindowStateMessage);
+  static const UINT msg =
+      RegisterWindowMessageW(minimize::platform::windows::properties::kQueryWindowStateMessage);
   return msg;
 }
 
-[[nodiscard]] bool QueryWindowState(HWND overlay, HWND target,
-                                    std::uint32_t* out_state) noexcept {
+[[nodiscard]] bool QueryWindowState(HWND overlay, HWND target, std::uint32_t* out_state) noexcept {
   if (overlay == nullptr || target == nullptr || out_state == nullptr) return false;
   DWORD_PTR raw_state = 0;
   constexpr UINT kStateQueryTimeoutMs = 50;
   const LRESULT result =
-      SendMessageTimeoutW(overlay, GetQueryWindowStateMessage(), reinterpret_cast<WPARAM>(target), 0,
-                          SMTO_ABORTIFHUNG | SMTO_BLOCK, kStateQueryTimeoutMs, &raw_state);
+      SendMessageTimeoutW(overlay, GetQueryWindowStateMessage(), reinterpret_cast<WPARAM>(target),
+                          0, SMTO_ABORTIFHUNG | SMTO_BLOCK, kStateQueryTimeoutMs, &raw_state);
   if (result == 0) return false;
   *out_state = static_cast<std::uint32_t>(raw_state);
   return true;
@@ -64,102 +63,115 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
   return TRUE;
 }
 
+namespace {
+
+void LogMinMaxTrace(HWND target_window, int show_cmd) {
+  if (!minimize::core::IsTraceLoggingEnabled()) return;
+  wchar_t class_name[256]{};
+  GetClassNameW(target_window, class_name, static_cast<int>(std::size(class_name)));
+  wchar_t title[256]{};
+  GetWindowTextW(target_window, title, static_cast<int>(std::size(title)));
+
+  std::wstring_view cmd_name = L"UNKNOWN";
+  if (IsMinimizeCommand(show_cmd)) {
+    cmd_name = L"MINIMIZE";
+  } else if (IsRestoreCommand(show_cmd)) {
+    cmd_name = L"RESTORE";
+  }
+
+  minimize::core::LogTrace(L"HookDLL", std::format(L"CBT HCBT_MINMAX: hwnd={} cmd={} show_cmd={} "
+                                                   L"class=\"{}\" title=\"{}\"",
+                                                   static_cast<const void*>(target_window),
+                                                   cmd_name, show_cmd, class_name, title));
+}
+
+bool TryHandleMinimize(HWND overlay_window, HWND target_window, LPARAM l_param,
+                       std::uint32_t window_state) {
+  const auto show_cmd = static_cast<int>(l_param & 0xFFFF);
+  if (!IsMinimizeCommand(show_cmd)) return false;
+  if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
+    minimize::core::LogTrace(L"HookDLL", L"Minimize allowed natively for excluded application");
+    return false;
+  }
+  if ((window_state & minimize::platform::windows::properties::kHookStateAllowMinimize) != 0) {
+    minimize::core::LogTrace(L"HookDLL", L"Minimize allowed by application window state");
+    return false;
+  }
+  const UINT message = GetMinimizeMessage();
+  if (overlay_window == nullptr || message == 0) return false;
+
+  if (PostMessageW(overlay_window, message, reinterpret_cast<WPARAM>(target_window), l_param)) {
+    minimize::core::LogTrace(
+        L"HookDLL", L"PostMessage(MinimizeMinimizeAttempt) succeeded; blocking native minimize");
+    return true;
+  }
+  const DWORD error = GetLastError();
+  if (minimize::core::IsTraceLoggingEnabled()) {
+    minimize::core::LogDebug(
+        L"HookDLL", std::format(L"PostMessage(MinimizeMinimizeAttempt) failed error={}", error));
+  }
+  return false;
+}
+
+bool TryHandleRestore(HWND overlay_window, HWND target_window, LPARAM l_param,
+                      std::uint32_t window_state) {
+  const auto show_cmd = static_cast<int>(l_param & 0xFFFF);
+  if (!IsRestoreCommand(show_cmd)) return false;
+  if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
+    minimize::core::LogTrace(L"HookDLL", L"Restore allowed natively for excluded application");
+    return false;
+  }
+  if ((window_state & minimize::platform::windows::properties::kHookStateAllowRestore) != 0) {
+    minimize::core::LogTrace(L"HookDLL", L"Restore allowed by application window state");
+    return false;
+  }
+  const UINT message = GetRestoreMessage();
+  if (overlay_window == nullptr || message == 0) return false;
+
+  DWORD_PTR handled = 0;
+  constexpr UINT kRestoreMessageTimeoutMs = 75;
+  const LRESULT send_result =
+      SendMessageTimeoutW(overlay_window, message, reinterpret_cast<WPARAM>(target_window), l_param,
+                          SMTO_ABORTIFHUNG, kRestoreMessageTimeoutMs, &handled);
+  if (send_result == 0) {
+    const DWORD error = GetLastError();
+    if (minimize::core::IsTraceLoggingEnabled()) {
+      minimize::core::LogDebug(
+          L"HookDLL",
+          std::format(L"SendMessageTimeout(MinimizeRestoreAttempt) failed error={}", error));
+    }
+  }
+  return handled != 0;
+}
+
+}  // namespace
+
 extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_param,
                                                           LPARAM l_param) noexcept {
-  if (code < 0) {
+  if (code != HCBT_MINMAX) {
     return CallNextHookEx(nullptr, code, w_param, l_param);
   }
 
   try {
-    if (code == HCBT_MINMAX) {
-      const auto show_cmd = static_cast<int>(l_param & 0xFFFF);
-      const auto target_window = reinterpret_cast<HWND>(w_param);
+    const auto show_cmd = static_cast<int>(l_param & 0xFFFF);
+    const auto target_window = reinterpret_cast<HWND>(w_param);
 
-      if (minimize::core::IsTraceLoggingEnabled()) {
-        wchar_t class_name[256]{};
-        GetClassNameW(target_window, class_name, static_cast<int>(std::size(class_name)));
-        wchar_t title[256]{};
-        GetWindowTextW(target_window, title, static_cast<int>(std::size(title)));
+    LogMinMaxTrace(target_window, show_cmd);
 
-        std::wstring_view cmd_name = L"UNKNOWN";
-        if (IsMinimizeCommand(show_cmd))
-          cmd_name = L"MINIMIZE";
-        else if (IsRestoreCommand(show_cmd))
-          cmd_name = L"RESTORE";
+    const HWND overlay_window = FindWindowW(kOverlayClassName, nullptr);
+    std::uint32_t window_state = 0;
+    if (!QueryWindowState(overlay_window, target_window, &window_state)) {
+      return CallNextHookEx(nullptr, code, w_param, l_param);
+    }
 
-        minimize::core::LogTrace(
-            L"HookDLL",
-            std::format(L"CBT HCBT_MINMAX: hwnd={} cmd={} show_cmd={} class=\"{}\" title=\"{}\"",
-                        static_cast<const void*>(target_window), cmd_name, show_cmd, class_name,
-                        title));
-      }
-
-      const HWND overlay_window = FindWindowW(kOverlayClassName, nullptr);
-      std::uint32_t window_state = 0;
-      if (!QueryWindowState(overlay_window, target_window, &window_state)) {
-        return CallNextHookEx(nullptr, code, w_param, l_param);
-      }
-      if (IsMinimizeCommand(show_cmd)) {
-        if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
-          minimize::core::LogTrace(L"HookDLL",
-                                   L"Minimize allowed natively for excluded application");
-        } else if ((window_state &
-                    minimize::platform::windows::properties::kHookStateAllowMinimize) == 0) {
-          const UINT message = GetMinimizeMessage();
-          if (overlay_window != nullptr && message != 0) {
-            if (PostMessageW(overlay_window, message, reinterpret_cast<WPARAM>(target_window),
-                             l_param)) {
-              minimize::core::LogTrace(L"HookDLL",
-                                       L"PostMessage(MinimizeMinimizeAttempt) succeeded; blocking "
-                                       L"native minimize");
-              return 1;
-            }
-            const DWORD error = GetLastError();
-            if (minimize::core::IsTraceLoggingEnabled()) {
-              minimize::core::LogDebug(
-                  L"HookDLL",
-                  std::format(L"PostMessage(MinimizeMinimizeAttempt) failed error={}", error));
-            }
-          }
-        } else {
-          minimize::core::LogTrace(L"HookDLL", L"Minimize allowed by application window state");
-        }
-      }
-
-      if (IsRestoreCommand(show_cmd)) {
-        if ((window_state & minimize::platform::windows::properties::kHookStateExcluded) != 0) {
-          minimize::core::LogTrace(L"HookDLL",
-                                   L"Restore allowed natively for excluded "
-                                   L"application");
-        } else if ((window_state &
-                    minimize::platform::windows::properties::kHookStateAllowRestore) == 0) {
-          const UINT message = GetRestoreMessage();
-          if (overlay_window != nullptr && message != 0) {
-            DWORD_PTR handled = 0;
-            constexpr UINT kRestoreMessageTimeoutMs = 75;
-            const LRESULT send_result = SendMessageTimeoutW(
-                overlay_window, message, reinterpret_cast<WPARAM>(target_window), l_param,
-                SMTO_ABORTIFHUNG, kRestoreMessageTimeoutMs, &handled);
-            if (send_result == 0) {
-              const DWORD error = GetLastError();
-              if (minimize::core::IsTraceLoggingEnabled()) {
-                minimize::core::LogDebug(
-                    L"HookDLL",
-                    std::format(L"SendMessageTimeout(MinimizeRestoreAttempt) failed error={}",
-                                error));
-              }
-            }
-            if (handled != 0) {
-              return 1;
-            }
-          }
-        } else {
-          minimize::core::LogTrace(L"HookDLL", L"Restore allowed by application window state");
-        }
-      }
+    if (TryHandleMinimize(overlay_window, target_window, l_param, window_state)) {
+      return 1;
+    }
+    if (TryHandleRestore(overlay_window, target_window, l_param, window_state)) {
+      return 1;
     }
   } catch (...) {
-    // Prevent any C++ exception from crossing exported extern "C" DLL boundary
+    // Prevent any C++ exception from crossing the exported extern "C" DLL boundary.
   }
 
   return CallNextHookEx(nullptr, code, w_param, l_param);
@@ -168,19 +180,22 @@ extern "C" __declspec(dllexport) LRESULT CALLBACK CBTProc(int code, WPARAM w_par
 extern "C" __declspec(dllexport) LRESULT CALLBACK CallWndProc(int code, WPARAM w_param,
                                                               LPARAM l_param) noexcept {
   (void)w_param;
-  if (code >= 0 && l_param != 0) {
-    const auto* message = reinterpret_cast<const CWPSTRUCT*>(l_param);
-    const UINT set_window_cloak_message = RegisterWindowMessageW(kSetWindowCloakMessageName);
-    if (set_window_cloak_message != 0 && message->message == set_window_cloak_message &&
-        message->hwnd != nullptr) {
-      const BOOL cloaked = message->wParam != 0 ? TRUE : FALSE;
-      const HRESULT result =
-          DwmSetWindowAttribute(message->hwnd, DWMWA_CLOAK, &cloaked, sizeof(cloaked));
-      if (FAILED(result)) {
-        minimize::core::LogDebug(
-            L"HookDLL", L"DwmSetWindowAttribute(DWMWA_CLOAK) failed in target process");
-      }
+  if (code < 0 || l_param == 0) {
+    return CallNextHookEx(nullptr, code, w_param, l_param);
+  }
+
+  const auto* message = reinterpret_cast<const CWPSTRUCT*>(l_param);
+  const UINT set_window_cloak_message = RegisterWindowMessageW(kSetWindowCloakMessageName);
+  if (set_window_cloak_message != 0 && message->message == set_window_cloak_message &&
+      message->hwnd != nullptr) {
+    const BOOL cloaked = message->wParam != 0 ? TRUE : FALSE;
+    const HRESULT result =
+        DwmSetWindowAttribute(message->hwnd, DWMWA_CLOAK, &cloaked, sizeof(cloaked));
+    if (FAILED(result)) {
+      minimize::core::LogDebug(L"HookDLL",
+                               L"DwmSetWindowAttribute(DWMWA_CLOAK) failed in target process");
     }
   }
+
   return CallNextHookEx(nullptr, code, w_param, l_param);
 }

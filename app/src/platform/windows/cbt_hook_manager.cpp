@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "platform/windows/cbt_hook_manager.hpp"
 
@@ -126,6 +126,18 @@ std::wstring ExecutableDirectory() {
   return slash == std::wstring::npos ? L".\\" : path.substr(0, slash + 1);
 }
 
+HookProc ResolveHookProcedure(HMODULE library, const char* name, const char* decorated_name,
+                              WORD ordinal) {
+  FARPROC address = GetProcAddress(library, name);
+  if (address == nullptr && decorated_name != nullptr) {
+    address = GetProcAddress(library, decorated_name);
+  }
+  if (address == nullptr && ordinal != 0) {
+    address = GetProcAddress(library, MAKEINTRESOURCEA(ordinal));
+  }
+  return reinterpret_cast<HookProc>(address);
+}
+
 }  // namespace
 
 CbtHookManager::~CbtHookManager() { Uninstall(); }
@@ -147,28 +159,22 @@ bool CbtHookManager::Install() {
     return false;
   }
 
-  FARPROC address = GetProcAddress(library_, kCbtProcName);
-  if (address == nullptr) address = GetProcAddress(library_, kDecoratedCbtProcName);
-  if (address == nullptr) address = GetProcAddress(library_, MAKEINTRESOURCEA(1));
-  auto* procedure = reinterpret_cast<HookProc>(address);
-  if (procedure == nullptr) {
+  HookProc cbt_procedure = ResolveHookProcedure(library_, kCbtProcName, kDecoratedCbtProcName, 1);
+  if (cbt_procedure == nullptr) {
     core::LogDebug(L"CbtHook", L"GetProcAddress failed for CBTProc");
     Uninstall();
     return false;
   }
 
-  hook_ = SetWindowsHookExW(WH_CBT, procedure, library_, 0);
+  hook_ = SetWindowsHookExW(WH_CBT, cbt_procedure, library_, 0);
   if (hook_ == nullptr) {
     core::LogDebug(L"CbtHook", L"SetWindowsHookExW failed");
     Uninstall();
     return false;
   }
 
-  FARPROC call_window_address = GetProcAddress(library_, kCallWndProcName);
-  if (call_window_address == nullptr) {
-    call_window_address = GetProcAddress(library_, kDecoratedCallWndProcName);
-  }
-  auto* call_window_procedure = reinterpret_cast<HookProc>(call_window_address);
+  HookProc call_window_procedure =
+      ResolveHookProcedure(library_, kCallWndProcName, kDecoratedCallWndProcName, 0);
   if (call_window_procedure == nullptr) {
     core::LogDebug(L"CbtHook", L"GetProcAddress failed for CallWndProc");
     Uninstall();

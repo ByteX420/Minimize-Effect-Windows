@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "platform/windows/window_event_monitor.hpp"
 
@@ -95,7 +95,7 @@ bool WindowEventMonitor::Start(WindowCallback minimize_start_callback,
       foreground_hook_ == nullptr || state_change_hook_ == nullptr) {
     std::wcerr << L"SetWinEventHook failed.\n";
     minimize::core::LogDebug(L"WinEvent",
-                          L"SetWinEventHook failed error=" + std::to_wstring(GetLastError()));
+                             L"SetWinEventHook failed error=" + std::to_wstring(GetLastError()));
     Stop();
     return false;
   }
@@ -169,43 +169,53 @@ void WindowEventMonitor::HandleRestoreStart(HWND window) {
 }
 
 LRESULT WindowEventMonitor::OnShellMessage(UINT msg, WPARAM w_param, LPARAM l_param) {
-  if (msg == shell_hook_message_ && shell_hook_message_ != 0) {
-    int nCode = static_cast<int>(w_param);
-    if (nCode == HSHELL_GETMINRECT) {
-      const auto* info = reinterpret_cast<const SHELLHOOKINFO*>(l_param);
-      if (info != nullptr) {
-        HWND window = info->hwnd;
-        minimize::core::LogTrace(L"WinEvent", L"ShellHook HSHELL_GETMINRECT " + WindowBrief(window));
-        WINDOWPLACEMENT wp{};
-        wp.length = sizeof(wp);
-        if (GetWindowPlacement(window, &wp)) {
-          if (wp.showCmd == SW_SHOWMINIMIZED || wp.showCmd == SW_MINIMIZE || IsIconic(window)) {
-            HandleMinimizeStart(window);
-          } else {
-            minimize::core::LogTrace(L"WinEvent",
-                                  L"ShellHook ignored because window is not minimized showCmd=" +
-                                      std::to_wstring(wp.showCmd) + L" " + WindowBrief(window));
-          }
-        } else {
-          minimize::core::LogTrace(L"WinEvent", L"ShellHook GetWindowPlacement failed error=" +
-                                                 std::to_wstring(GetLastError()) + L" " +
-                                                 WindowBrief(window));
-        }
-      }
-    }
+  if (msg != shell_hook_message_ || shell_hook_message_ == 0) {
+    return DefWindowProcW(message_window_, msg, w_param, l_param);
   }
+
+  const int shell_code = static_cast<int>(w_param);
+  if (shell_code != HSHELL_GETMINRECT) {
+    return DefWindowProcW(message_window_, msg, w_param, l_param);
+  }
+
+  const auto* info = reinterpret_cast<const SHELLHOOKINFO*>(l_param);
+  if (info == nullptr) {
+    return DefWindowProcW(message_window_, msg, w_param, l_param);
+  }
+
+  HWND window = info->hwnd;
+  minimize::core::LogTrace(L"WinEvent", L"ShellHook HSHELL_GETMINRECT " + WindowBrief(window));
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  if (!GetWindowPlacement(window, &placement)) {
+    minimize::core::LogTrace(L"WinEvent", L"ShellHook GetWindowPlacement failed error=" +
+                                              std::to_wstring(GetLastError()) + L" " +
+                                              WindowBrief(window));
+    return DefWindowProcW(message_window_, msg, w_param, l_param);
+  }
+
+  if (placement.showCmd == SW_SHOWMINIMIZED || placement.showCmd == SW_MINIMIZE ||
+      IsIconic(window)) {
+    HandleMinimizeStart(window);
+  } else {
+    minimize::core::LogTrace(L"WinEvent",
+                             L"ShellHook ignored because window is not minimized showCmd=" +
+                                 std::to_wstring(placement.showCmd) + L" " + WindowBrief(window));
+  }
+
   return DefWindowProcW(message_window_, msg, w_param, l_param);
 }
 
 void WindowEventMonitor::OnWinEvent(DWORD event, HWND window, LONG object_id, LONG child_id) {
   if (window == nullptr) {
-    minimize::core::LogTrace(L"WinEvent", L"OnWinEvent ignored null window event=" + EventName(event));
+    minimize::core::LogTrace(L"WinEvent",
+                             L"OnWinEvent ignored null window event=" + EventName(event));
     return;
   }
 
   minimize::core::LogTrace(L"WinEvent", L"OnWinEvent event=" + EventName(event) + L" object_id=" +
-                                         std::to_wstring(object_id) + L" child_id=" +
-                                         std::to_wstring(child_id) + L" " + WindowBrief(window));
+                                            std::to_wstring(object_id) + L" child_id=" +
+                                            std::to_wstring(child_id) + L" " + WindowBrief(window));
 
   if (event == EVENT_SYSTEM_MINIMIZESTART) {
     HandleMinimizeStart(window);
@@ -218,16 +228,16 @@ void WindowEventMonitor::OnWinEvent(DWORD event, HWND window, LONG object_id, LO
   }
 
   if (object_id != OBJID_WINDOW || child_id != CHILDID_SELF) {
-    minimize::core::LogTrace(L"WinEvent", L"OnWinEvent ignored non-window object event=" +
-                                           EventName(event) + L" object_id=" +
-                                           std::to_wstring(object_id) + L" child_id=" +
-                                           std::to_wstring(child_id) + L" " + WindowBrief(window));
+    minimize::core::LogTrace(L"WinEvent",
+                             L"OnWinEvent ignored non-window object event=" + EventName(event) +
+                                 L" object_id=" + std::to_wstring(object_id) + L" child_id=" +
+                                 std::to_wstring(child_id) + L" " + WindowBrief(window));
     return;
   }
 
   if (window_seen_callback_) {
     minimize::core::LogTrace(L"WinEvent", L"OnWinEvent dispatch window_seen event=" +
-                                           EventName(event) + L" " + WindowBrief(window));
+                                              EventName(event) + L" " + WindowBrief(window));
     window_seen_callback_(window, event);
   }
 }

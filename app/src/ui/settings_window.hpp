@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <array>
 #include <memory>
@@ -96,6 +96,7 @@ private:
   };
 
   static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_param);
+  void HandleTrayCommand(ui::TrayCommand command);
   bool CreateRenderWindow(HINSTANCE instance);
   void ApplyWindowShape(int width, int height);
   void UpdateDpi(UINT dpi);
@@ -105,6 +106,8 @@ private:
   void RecordFileOperationResult(const SettingsFileOperationResult& result);
   void HandleCloseRequest();
   void HandleUpdateStateChanged();
+  [[nodiscard]] std::optional<LRESULT> HandleTitlebarMessage(HWND hwnd, UINT message,
+                                                             LPARAM l_param, float scale);
   void UpdateStartupEnterMotionGate();
   [[nodiscard]] bool DetectStartupEnterMotionActive() const;
 

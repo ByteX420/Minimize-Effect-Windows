@@ -61,6 +61,25 @@ std::optional<minimize::app::ApplicationLaunchOptions> ParseLaunchOptions(int ar
   return options;
 }
 
+std::optional<int> WaitForUpdateParentWithMessagePump(HANDLE parent,
+                                                      minimize::app::Application& application) {
+  const ULONGLONG handover_deadline = GetTickCount64() + 30000;
+  while (GetTickCount64() < handover_deadline) {
+    const HANDLE parent_handle = parent;
+    const DWORD parent_wait = MsgWaitForMultipleObjects(1, &parent_handle, FALSE, 16, QS_ALLINPUT);
+    if (parent_wait == WAIT_OBJECT_0 || parent_wait == WAIT_FAILED) break;
+
+    MSG message{};
+    while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+      if (message.message == WM_QUIT) return static_cast<int>(message.wParam);
+      TranslateMessage(&message);
+      DispatchMessageW(&message);
+    }
+    application.RenderUpdateHandoverFrame();
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 int wmain(int argument_count, wchar_t* arguments[]) {
@@ -105,24 +124,9 @@ int wmain(int argument_count, wchar_t* arguments[]) {
     if (ready_event) SetEvent(ready_event.get());
     wil::unique_handle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
                                           launch_options->update_parent_process_id));
-    if (parent) {
-      const ULONGLONG handover_deadline = GetTickCount64() + 30000;
-      DWORD parent_wait = WAIT_TIMEOUT;
-      while (GetTickCount64() < handover_deadline) {
-        const HANDLE parent_handle = parent.get();
-        parent_wait = MsgWaitForMultipleObjects(1, &parent_handle, FALSE, 16, QS_ALLINPUT);
-        if (parent_wait == WAIT_OBJECT_0 || parent_wait == WAIT_FAILED) break;
-        MSG message{};
-        while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
-          if (message.message == WM_QUIT) {
-            return static_cast<int>(message.wParam);
-          }
-          TranslateMessage(&message);
-          DispatchMessageW(&message);
-        }
-        application.RenderUpdateHandoverFrame();
-      }
-    }
+    const std::optional<int> parent_exit_code =
+        parent ? WaitForUpdateParentWithMessagePump(parent.get(), application) : std::nullopt;
+    if (parent_exit_code.has_value()) return *parent_exit_code;
 
     bool acquired = false;
     for (int attempt = 0; attempt < 100; ++attempt) {

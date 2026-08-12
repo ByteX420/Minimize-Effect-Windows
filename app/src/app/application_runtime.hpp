@@ -95,13 +95,6 @@ public:
   bool ExecuteDiagnosticsAction(features::DiagnosticsAction action) override;
   void HealWindows() override { HealLeftoverWindows(); }
   void RequestExit() override { RequestShutdown(); }
-#ifdef _DEBUG
-  bool RunStressTest();
-  void UpdateStressTest();
-  void DestroyStressTestWindows();
-  void SetStressTestWindowState(HWND window, bool minimized);
-  [[nodiscard]] bool HasActiveAnimationRuns() const;
-#endif
 
 private:
   enum class RunCleanupOutcome {
@@ -123,6 +116,10 @@ private:
   void SetRunState(int run_index, runtime::RunState state);
   void CleanupRun(int run_index, RunCleanupOutcome outcome);
   void CheckAnimationTimeouts();
+  [[nodiscard]] bool HasActiveAnimationRuns() const;
+  void ProcessPendingNativeMinimize(int run_index, runtime::AnimationRun& slot);
+  void ProcessUnstartedAnimationClock(int run_index, runtime::AnimationRun& slot);
+  void ProcessLiveCaptureRefresh(runtime::AnimationRun& slot);
   void UpdateRuntime();
   void HandleDisplayChange();
   [[nodiscard]] MessageLoopWait TickRuntime();
@@ -135,13 +132,27 @@ private:
   void UpdateTemporaryPause();
   void MinimizeAllWindows();
   void RestoreAllWindows();
+  [[nodiscard]] std::vector<HWND> CollectBulkWindowCandidates(HWND previous_in_flight) const;
+  void QueueBulkWindowCandidates(BulkWindowAction action, HMONITOR target_monitor,
+                                 const std::vector<HWND>& candidates);
+  void PrepareBulkWindowCapture(HWND window);
+  void PrepareBulkWindowCaptures();
   void StartBulkWindowAction(BulkWindowAction action);
+  void CommitPreparedBulkMinimizeRuns();
   void ProcessBulkWindowAction();
   void RegisterConfiguredHotkeys();
   void UnregisterAllHotkeys();
   [[nodiscard]] bool StartRuntimeServices();
   void PrewarmAnimationRuns();
   [[nodiscard]] features::DiagnosticsSnapshot BuildDiagnosticsSnapshot() const;
+#ifdef _DEBUG
+  bool RunStressTest();
+  void UpdateStressTest();
+  void DestroyStressTestWindows();
+  void SetStressTestWindowState(HWND window, bool minimized);
+  void AbortActiveAnimationRuns();
+  void RestoreStressTestWindowsForFinalization();
+#endif
   [[nodiscard]] bool IsTemporarilyPaused() const;
   [[nodiscard]] bool IsEffectActive() const;
   void UpdateFullscreenSuppression(bool force = false);

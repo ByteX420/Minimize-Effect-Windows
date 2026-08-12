@@ -10,8 +10,8 @@
 #include <oleauto.h>
 #include <shellapi.h>
 #include <uiautomation.h>
-#include <winver.h>
 #include <wil/resource.h>
+#include <winver.h>
 
 #include "core/logger.hpp"
 #include "platform/windows/taskbar_locator.hpp"
@@ -67,9 +67,8 @@ std::wstring GetProcessDescription(const std::wstring& process_path) {
     return {};
   }
 
-  const std::wstring sub_block =
-      std::format(L"\\StringFileInfo\\{:04x}{:04x}\\FileDescription",
-                  translations[0].language, translations[0].codepage);
+  const std::wstring sub_block = std::format(L"\\StringFileInfo\\{:04x}{:04x}\\FileDescription",
+                                             translations[0].language, translations[0].codepage);
 
   wchar_t* description = nullptr;
   UINT desc_len = 0;
@@ -101,8 +100,7 @@ BOOL CALLBACK FindDescendantClassCallback(HWND window, LPARAM parameter) {
 HWND FindDescendantByClass(HWND parent, const wchar_t* class_name) {
   if (parent == nullptr || class_name == nullptr) return nullptr;
   DescendantClassSearch search{.class_name = class_name};
-  EnumChildWindows(parent, FindDescendantClassCallback,
-                   reinterpret_cast<LPARAM>(&search));
+  EnumChildWindows(parent, FindDescendantClassCallback, reinterpret_cast<LPARAM>(&search));
   return search.result;
 }
 
@@ -127,25 +125,163 @@ bool IsTaskbarButtonCandidate(const RECT& candidate, const RECT& taskbar,
   // Those controls can share words with a window title, but are never app task buttons.
   const LONG center_x = candidate.left + static_cast<LONG>(width / 2);
   const LONG center_y = candidate.top + static_cast<LONG>(height / 2);
-  return notification_area == nullptr ||
-         !ContainsPoint(*notification_area, center_x, center_y);
+  return notification_area == nullptr || !ContainsPoint(*notification_area, center_x, center_y);
 }
 
-bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out_rect) {
-  if (window == nullptr || !IsWindow(window)) {
-    return false;
+struct WindowMatchContext {
+  std::wstring title;
+  std::vector<std::wstring> title_tokens;
+  std::wstring class_name;
+  std::wstring process_no_ext;
+  std::vector<std::wstring> process_tokens;
+  std::wstring description_lower;
+  std::vector<std::wstring> description_tokens;
+};
+
+struct TaskbarButtonSearch {
+  HWND window = nullptr;
+  HWND root_owner = nullptr;
+  const WindowMatchContext& window_match;
+  const RECT& taskbar_rect;
+  const RECT* notification_rect = nullptr;
+};
+
+struct TaskbarButtonMatch {
+  int score = -1;
+  RECT rect{};
+};
+
+int CalculateTokenMatches(const std::vector<std::wstring>& button_tokens,
+                          const WindowMatchContext& window_match) {
+  int token_matches = 0;
+  for (const std::wstring& token : button_tokens) {
+    if (token.length() < 2) continue;
+    if (token == L"the" || token == L"and" || token == L"new" || token == L"tab" ||
+        token == L"window") {
+      continue;
+    }
+
+    if (!window_match.title.empty() &&
+        std::find(window_match.title_tokens.begin(), window_match.title_tokens.end(), token) !=
+            window_match.title_tokens.end()) {
+      token_matches++;
+    }
+    if (!window_match.process_no_ext.empty() &&
+        std::find(window_match.process_tokens.begin(), window_match.process_tokens.end(), token) !=
+            window_match.process_tokens.end()) {
+      token_matches += 2;
+    }
+    if (!window_match.description_lower.empty() &&
+        std::find(window_match.description_tokens.begin(), window_match.description_tokens.end(),
+                  token) != window_match.description_tokens.end()) {
+      token_matches += 2;
+    }
+  }
+  return token_matches;
+}
+
+int CalculateNameScore(const std::wstring& button_name,
+                       const std::vector<std::wstring>& button_tokens,
+                       const WindowMatchContext& window_match) {
+  const std::wstring normalized_name = ToLower(button_name);
+  if (normalized_name.empty()) return 0;
+
+  // Scores are ordered by confidence: exact names, contained names, token overlap, then class.
+  if (!window_match.title.empty() && normalized_name == window_match.title) return 100;
+  if (!window_match.process_no_ext.empty() && normalized_name == window_match.process_no_ext)
+    return 95;
+  if (!window_match.description_lower.empty() && normalized_name == window_match.description_lower)
+    return 93;
+  if (!window_match.title.empty() && window_match.title.find(normalized_name) != std::wstring::npos)
+    return 90;
+  if (!window_match.title.empty() && normalized_name.find(window_match.title) != std::wstring::npos)
+    return 85;
+  if (!window_match.description_lower.empty() &&
+      window_match.description_lower.find(normalized_name) != std::wstring::npos)
+    return 83;
+  if (!window_match.description_lower.empty() &&
+      normalized_name.find(window_match.description_lower) != std::wstring::npos)
+    return 82;
+  if (!window_match.process_no_ext.empty() &&
+      normalized_name.find(window_match.process_no_ext) != std::wstring::npos)
+    return 80;
+  if (!window_match.process_no_ext.empty() &&
+      window_match.process_no_ext.find(normalized_name) != std::wstring::npos)
+    return 75;
+
+  const int token_matches = CalculateTokenMatches(button_tokens, window_match);
+  if (token_matches > 0) return 50 + token_matches * 5;
+
+  for (const std::wstring& token : button_tokens) {
+    if (token.length() >= 3 && window_match.class_name.find(token) != std::wstring::npos) {
+      return 40;
+    }
+  }
+  return 0;
+}
+
+int CalculateButtonScore(IUIAutomationElement* element, const std::wstring& button_name,
+                         HWND window, HWND root_owner, const WindowMatchContext& window_match) {
+  UIA_HWND element_window = nullptr;
+  // A native HWND/owner match is definitive and outranks all textual heuristics.
+  if (SUCCEEDED(element->get_CurrentNativeWindowHandle(&element_window)) &&
+      element_window != nullptr) {
+    HWND item_hwnd = reinterpret_cast<HWND>(element_window);
+    if (item_hwnd == window || item_hwnd == root_owner ||
+        GetAncestor(item_hwnd, GA_ROOTOWNER) == root_owner) {
+      return 1000;
+    }
   }
 
-  // 1. Retrieve window properties
+  const std::vector<std::wstring> button_tokens = Tokenize(button_name);
+  return CalculateNameScore(button_name, button_tokens, window_match);
+}
+
+Microsoft::WRL::ComPtr<IUIAutomationCondition> CreateTaskbarQueryCondition(
+    IUIAutomation* automation) {
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> button_condition;
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> list_condition;
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> tab_condition;
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> app_item_condition;
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> combined_condition;
+
+  VARIANT var;
+  VariantInit(&var);
+  var.vt = VT_I4;
+
+  // App entries can be buttons, list items, or tab items depending on the Windows shell version.
+  var.lVal = UIA_ButtonControlTypeId;
+  automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var,
+                                      button_condition.GetAddressOf());
+  var.lVal = UIA_ListItemControlTypeId;
+  automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var,
+                                      list_condition.GetAddressOf());
+  var.lVal = UIA_TabItemControlTypeId;
+  automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var, tab_condition.GetAddressOf());
+
+  if (button_condition && list_condition) {
+    automation->CreateOrCondition(button_condition.Get(), list_condition.Get(),
+                                  app_item_condition.GetAddressOf());
+  } else {
+    app_item_condition = button_condition ? button_condition : list_condition;
+  }
+
+  if (app_item_condition && tab_condition) {
+    automation->CreateOrCondition(app_item_condition.Get(), tab_condition.Get(),
+                                  combined_condition.GetAddressOf());
+  } else {
+    combined_condition = app_item_condition ? app_item_condition : tab_condition;
+  }
+
+  return combined_condition;
+}
+
+WindowMatchContext BuildWindowMatchContext(HWND window) {
   wchar_t raw_title[512]{};
   GetWindowTextW(window, raw_title, static_cast<int>(std::size(raw_title)));
-  std::wstring title = ToLower(raw_title);
-  std::vector<std::wstring> title_tokens = Tokenize(raw_title);
 
   wchar_t raw_class[256]{};
   GetClassNameW(window, raw_class, static_cast<int>(std::size(raw_class)));
-  std::wstring class_name = ToLower(raw_class);
-  std::vector<std::wstring> class_tokens = Tokenize(raw_class);
 
   DWORD process_id = 0;
   GetWindowThreadProcessId(window, &process_id);
@@ -157,11 +293,7 @@ bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out
     DWORD size = static_cast<DWORD>(std::size(path));
     if (QueryFullProcessImageNameW(process.get(), 0, path, &size)) {
       wchar_t* filename = wcsrchr(path, L'\\');
-      if (filename != nullptr) {
-        process_name = filename + 1;
-      } else {
-        process_name = path;
-      }
+      process_name = filename != nullptr ? filename + 1 : path;
       process_description = GetProcessDescription(path);
     }
   }
@@ -171,248 +303,117 @@ bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out
   if (dot != std::wstring::npos) {
     process_no_ext = process_no_ext.substr(0, dot);
   }
-  std::vector<std::wstring> process_tokens = Tokenize(process_no_ext);
 
-  std::wstring description_lower = ToLower(process_description);
-  std::vector<std::wstring> description_tokens = Tokenize(process_description);
+  return WindowMatchContext{
+      .title = ToLower(raw_title),
+      .title_tokens = Tokenize(raw_title),
+      .class_name = ToLower(raw_class),
+      .process_no_ext = process_no_ext,
+      .process_tokens = Tokenize(process_no_ext),
+      .description_lower = ToLower(process_description),
+      .description_tokens = Tokenize(process_description),
+  };
+}
+
+TaskbarButtonMatch FindBestTaskbarButton(IUIAutomationElementArray* elements,
+                                         const TaskbarButtonSearch& search) {
+  TaskbarButtonMatch best;
+  int length = 0;
+  elements->get_Length(&length);
+  for (int i = 0; i < length; ++i) {
+    Microsoft::WRL::ComPtr<IUIAutomationElement> element;
+    elements->GetElement(i, element.GetAddressOf());
+    if (!element) continue;
+
+    BSTR name = nullptr;
+    RECT rect{};
+    element->get_CurrentName(&name);
+    element->get_CurrentBoundingRectangle(&rect);
+    std::wstring button_name = name != nullptr ? name : L"";
+    if (name != nullptr) SysFreeString(name);
+
+    if (!IsTaskbarButtonCandidate(rect, search.taskbar_rect, search.notification_rect)) continue;
+
+    const int score = CalculateButtonScore(element.Get(), button_name, search.window,
+                                           search.root_owner, search.window_match);
+    minimize::core::LogTrace(
+        L"UIAutomation", L"Checking button: '" + button_name + L"' rect=" +
+                             std::to_wstring(rect.left) + L"," + std::to_wstring(rect.top) + L"," +
+                             std::to_wstring(rect.right) + L"," + std::to_wstring(rect.bottom) +
+                             L" score=" + std::to_wstring(score));
+
+    if (score > best.score) {
+      best.score = score;
+      best.rect = rect;
+    }
+
+    if (best.score >= 1000) break;
+  }
+  return best;
+}
+
+bool FindTaskbarIconUIAutomation(HWND window, const RECT& window_rect, RECT* out_rect) {
+  if (window == nullptr || !IsWindow(window) || out_rect == nullptr) return false;
+
+  const WindowMatchContext window_match = BuildWindowMatchContext(window);
 
   HWND root_owner = GetAncestor(window, GA_ROOTOWNER);
   if (root_owner == nullptr) root_owner = window;
 
-  // 2. Search only the taskbar on the window's monitor. Searching every taskbar can select
-  // a same-named pinned item on another display.
-  std::vector<HWND> taskbar_windows;
   HWND target_taskbar = FindTaskbarWindowForRect(window_rect);
-  if (target_taskbar != nullptr) taskbar_windows.push_back(target_taskbar);
+  if (target_taskbar == nullptr) return false;
 
-  if (taskbar_windows.empty()) {
-    return false;
-  }
+  // Search only the taskbar on this window's monitor; another display may contain the same pin.
 
-  // 3. Initialize UI Automation
-  IUIAutomation* automation = nullptr;
+  Microsoft::WRL::ComPtr<IUIAutomation> automation;
   HRESULT hr = CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER,
-                                IID_PPV_ARGS(&automation));
-  if (FAILED(hr) || automation == nullptr) {
-    return false;
-  }
+                                IID_PPV_ARGS(automation.GetAddressOf()));
+  if (FAILED(hr) || !automation) return false;
 
-  int best_score = -1;
-  RECT best_rect{};
+  Microsoft::WRL::ComPtr<IUIAutomationElement> taskbar_element;
+  hr = automation->ElementFromHandle(target_taskbar, taskbar_element.GetAddressOf());
+  if (FAILED(hr) || !taskbar_element) return false;
 
-  for (HWND tb_hwnd : taskbar_windows) {
-    IUIAutomationElement* taskbar_element = nullptr;
-    hr = automation->ElementFromHandle(tb_hwnd, &taskbar_element);
-    if (FAILED(hr) || taskbar_element == nullptr) {
-      continue;
-    }
+  RECT taskbar_rect{};
+  if (!GetWindowRect(target_taskbar, &taskbar_rect)) return false;
 
-    RECT taskbar_rect{};
-    if (!GetWindowRect(tb_hwnd, &taskbar_rect)) {
-      taskbar_element->Release();
-      continue;
-    }
-    RECT notification_rect{};
-    const HWND notification_area = FindDescendantByClass(tb_hwnd, L"TrayNotifyWnd");
-    const bool has_notification_rect =
-        notification_area != nullptr && GetWindowRect(notification_area, &notification_rect);
+  RECT notification_rect{};
+  const HWND notification_area = FindDescendantByClass(target_taskbar, L"TrayNotifyWnd");
+  const bool has_notification_rect =
+      notification_area != nullptr && GetWindowRect(notification_area, &notification_rect);
 
-    // 4. App entries are exposed as buttons/list items/tab items. Pane controls are layout
-    // containers and previously allowed the right-side tray background to win the match.
-    IUIAutomationCondition* cond_button = nullptr;
-    IUIAutomationCondition* cond_list = nullptr;
-    IUIAutomationCondition* cond_tab = nullptr;
-    IUIAutomationCondition* cond_or1 = nullptr;
-    IUIAutomationCondition* cond_combined = nullptr;
+  Microsoft::WRL::ComPtr<IUIAutomationCondition> condition =
+      CreateTaskbarQueryCondition(automation.Get());
+  if (!condition) return false;
 
-    VARIANT var;
-    VariantInit(&var);
-    var.vt = VT_I4;
+  Microsoft::WRL::ComPtr<IUIAutomationElementArray> elements;
+  hr = taskbar_element->FindAll(TreeScope_Subtree, condition.Get(), elements.GetAddressOf());
+  if (FAILED(hr) || !elements) return false;
 
-    var.lVal = UIA_ButtonControlTypeId;
-    automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var, &cond_button);
-
-    var.lVal = UIA_ListItemControlTypeId;
-    automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var, &cond_list);
-
-    var.lVal = UIA_TabItemControlTypeId;
-    automation->CreatePropertyCondition(UIA_ControlTypePropertyId, var, &cond_tab);
-
-    if (cond_button && cond_list) {
-      automation->CreateOrCondition(cond_button, cond_list, &cond_or1);
-    } else if (cond_button) {
-      cond_or1 = cond_button;
-      cond_button->AddRef();
-    }
-
-    if (cond_or1 && cond_tab) {
-      automation->CreateOrCondition(cond_or1, cond_tab, &cond_combined);
-    } else if (cond_or1) {
-      cond_combined = cond_or1;
-      cond_or1->AddRef();
-    }
-
-    if (cond_button) cond_button->Release();
-    if (cond_list) cond_list->Release();
-    if (cond_tab) cond_tab->Release();
-    if (cond_or1) cond_or1->Release();
-
-    if (cond_combined == nullptr) {
-      taskbar_element->Release();
-      continue;
-    }
-
-    IUIAutomationElementArray* elements = nullptr;
-    hr = taskbar_element->FindAll(TreeScope_Subtree, cond_combined, &elements);
-    cond_combined->Release();
-
-    if (FAILED(hr) || elements == nullptr) {
-      taskbar_element->Release();
-      continue;
-    }
-
-    int length = 0;
-    elements->get_Length(&length);
-
-    for (int i = 0; i < length; ++i) {
-      IUIAutomationElement* el = nullptr;
-      elements->GetElement(i, &el);
-      if (el == nullptr) continue;
-
-      BSTR name = nullptr;
-      RECT rect{};
-      el->get_CurrentName(&name);
-      el->get_CurrentBoundingRectangle(&rect);
-
-      std::wstring btn_name = name ? name : L"";
-      if (name) SysFreeString(name);
-
-      // Keep candidates inside this taskbar and explicitly outside its notification area.
-      if (!IsTaskbarButtonCandidate(
-              rect, taskbar_rect, has_notification_rect ? &notification_rect : nullptr)) {
-        el->Release();
-        continue;
-      }
-
-      int score = 0;
-
-      // Check NativeWindowHandle for 100% exact HWND match
-      UIA_HWND el_hwnd = nullptr;
-      if (SUCCEEDED(el->get_CurrentNativeWindowHandle(&el_hwnd)) && el_hwnd != nullptr) {
-        HWND item_hwnd = reinterpret_cast<HWND>(el_hwnd);
-        if (item_hwnd == window || item_hwnd == root_owner ||
-            GetAncestor(item_hwnd, GA_ROOTOWNER) == root_owner) {
-          score = 1000;
-        }
-      }
-
-      if (score < 1000) {
-        std::wstring btn_name_lower = ToLower(btn_name);
-        std::vector<std::wstring> btn_tokens = Tokenize(btn_name);
-
-        if (!btn_name_lower.empty()) {
-          if (!title.empty() && btn_name_lower == title) {
-            score = 100;
-          } else if (!process_no_ext.empty() && btn_name_lower == process_no_ext) {
-            score = 95;
-          } else if (!description_lower.empty() && btn_name_lower == description_lower) {
-            score = 93;
-          } else if (!title.empty() && title.find(btn_name_lower) != std::wstring::npos) {
-            score = 90;
-          } else if (!title.empty() && btn_name_lower.find(title) != std::wstring::npos) {
-            score = 85;
-          } else if (!description_lower.empty() &&
-                     description_lower.find(btn_name_lower) != std::wstring::npos) {
-            score = 83;
-          } else if (!description_lower.empty() &&
-                     btn_name_lower.find(description_lower) != std::wstring::npos) {
-            score = 82;
-          } else if (!process_no_ext.empty() &&
-                     btn_name_lower.find(process_no_ext) != std::wstring::npos) {
-            score = 80;
-          } else if (!process_no_ext.empty() &&
-                     process_no_ext.find(btn_name_lower) != std::wstring::npos) {
-            score = 75;
-          } else {
-            // Token overlapping
-            int token_matches = 0;
-            for (const auto& bt : btn_tokens) {
-              if (bt.length() < 2) continue;
-              if (bt == L"the" || bt == L"and" || bt == L"new" || bt == L"tab" ||
-                  bt == L"window")
-                continue;
-
-              if (!title.empty() &&
-                  std::find(title_tokens.begin(), title_tokens.end(), bt) != title_tokens.end()) {
-                token_matches++;
-              }
-              if (!process_no_ext.empty() &&
-                  std::find(process_tokens.begin(), process_tokens.end(), bt) !=
-                      process_tokens.end()) {
-                token_matches += 2;
-              }
-              if (!description_lower.empty() &&
-                  std::find(description_tokens.begin(), description_tokens.end(), bt) !=
-                      description_tokens.end()) {
-                token_matches += 2;
-              }
-            }
-            if (token_matches > 0) {
-              score = 50 + token_matches * 5;
-            } else {
-              // Class matching fallback
-              for (const auto& bt : btn_tokens) {
-                if (bt.length() < 3) continue;
-                if (class_name.find(bt) != std::wstring::npos) {
-                  score = 40;
-                  break;
-                }
-              }
-            }
-          }
-        }
-      }
-
-      minimize::core::LogTrace(
-          L"UIAutomation",
-          L"Checking button: '" + btn_name + L"' rect=" + std::to_wstring(rect.left) + L"," +
-              std::to_wstring(rect.top) + L"," + std::to_wstring(rect.right) + L"," +
-              std::to_wstring(rect.bottom) + L" score=" + std::to_wstring(score));
-
-      if (score > best_score) {
-        best_score = score;
-        best_rect = rect;
-      }
-
-      el->Release();
-      if (best_score >= 1000) {
-        break;
-      }
-    }
-
-    elements->Release();
-    taskbar_element->Release();
-    if (best_score >= 1000) {
-      break;
-    }
-  }
-
-  automation->Release();
+  const TaskbarButtonSearch search{
+      .window = window,
+      .root_owner = root_owner,
+      .window_match = window_match,
+      .taskbar_rect = taskbar_rect,
+      .notification_rect = has_notification_rect ? &notification_rect : nullptr,
+  };
+  const TaskbarButtonMatch best = FindBestTaskbarButton(elements.Get(), search);
 
   constexpr int kMinimumReliableScore = 50;
-  if (best_score >= kMinimumReliableScore) {
+  if (best.score >= kMinimumReliableScore) {
     minimize::core::LogTrace(
         L"UIAutomation",
-        L"Matched best button for title='" + title + L"' proc='" + process_no_ext +
-            L"' with score=" + std::to_wstring(best_score) + L" rect=" +
-            std::to_wstring(best_rect.left) + L"," + std::to_wstring(best_rect.top) + L"," +
-            std::to_wstring(best_rect.right) + L"," + std::to_wstring(best_rect.bottom));
-    *out_rect = best_rect;
+        L"Matched best button for title='" + window_match.title + L"' proc='" +
+            window_match.process_no_ext + L"' with score=" + std::to_wstring(best.score) +
+            L" rect=" + std::to_wstring(best.rect.left) + L"," + std::to_wstring(best.rect.top) +
+            L"," + std::to_wstring(best.rect.right) + L"," + std::to_wstring(best.rect.bottom));
+    *out_rect = best.rect;
     return true;
   }
 
-  minimize::core::LogTrace(L"UIAutomation", L"Failed to match any button for title='" + title +
-                                             L"' proc='" + process_no_ext + L"'");
+  minimize::core::LogTrace(L"UIAutomation", L"Failed to match any button for title='" +
+                                                window_match.title + L"' proc='" +
+                                                window_match.process_no_ext + L"'");
   return false;
 }
 
@@ -423,6 +424,24 @@ minimize::animation::RectF ToRectF(const RECT& rect) {
       .right = static_cast<float>(rect.right),
       .bottom = static_cast<float>(rect.bottom),
   };
+}
+
+RECT EstimateTaskbarRect(const MONITORINFO& monitor_info) {
+  const RECT& monitor = monitor_info.rcMonitor;
+  const RECT& work_area = monitor_info.rcWork;
+  if (work_area.bottom < monitor.bottom) {
+    return RECT{monitor.left, work_area.bottom, monitor.right, monitor.bottom};
+  }
+  if (work_area.top > monitor.top) {
+    return RECT{monitor.left, monitor.top, monitor.right, work_area.top};
+  }
+  if (work_area.left > monitor.left) {
+    return RECT{monitor.left, monitor.top, work_area.left, monitor.bottom};
+  }
+  if (work_area.right < monitor.right) {
+    return RECT{work_area.right, monitor.top, monitor.right, monitor.bottom};
+  }
+  return RECT{monitor.left, monitor.bottom - 48, monitor.right, monitor.bottom};
 }
 
 float Clamp(float value, float min_value, float max_value) {
@@ -446,7 +465,7 @@ bool IsTaskbarMostlyVisible(HWND taskbar, const RECT& monitor_rect) {
   const LONG visible_height = visible_rect.bottom - visible_rect.top;
   if (taskbar_width <= 0 || taskbar_height <= 0) return false;
   return taskbar_width >= taskbar_height ? visible_height * 10 >= taskbar_height * 9
-                                        : visible_width * 10 >= taskbar_width * 9;
+                                         : visible_width * 10 >= taskbar_width * 9;
 }
 
 }  // namespace
@@ -483,8 +502,7 @@ bool TaskbarTargetProvider::RevealAutoHideTaskbarForWindow(const RECT& window_re
   HMONITOR monitor = MonitorFromRect(&window_rect, MONITOR_DEFAULTTONEAREST);
   MONITORINFO monitor_info{};
   monitor_info.cbSize = sizeof(monitor_info);
-  if (target_taskbar != nullptr && monitor != nullptr &&
-      GetMonitorInfoW(monitor, &monitor_info)) {
+  if (target_taskbar != nullptr && monitor != nullptr && GetMonitorInfoW(monitor, &monitor_info)) {
     constexpr ULONGLONG kRevealTimeoutMs = 400;
     const ULONGLONG deadline = GetTickCount64() + kRevealTimeoutMs;
     while (!IsTaskbarMostlyVisible(target_taskbar, monitor_info.rcMonitor) &&
@@ -509,8 +527,7 @@ void TaskbarTargetProvider::ReleaseAutoHideTaskbar() {
 }
 
 void TaskbarTargetProvider::UpdateAutoHideTaskbarRestore() {
-  if (auto_hide_restore_deadline_ms_ != 0 &&
-      GetTickCount64() >= auto_hide_restore_deadline_ms_) {
+  if (auto_hide_restore_deadline_ms_ != 0 && GetTickCount64() >= auto_hide_restore_deadline_ms_) {
     RestoreAutoHideTaskbar();
   }
 }
@@ -534,7 +551,7 @@ void TaskbarTargetProvider::RestoreAutoHideTaskbar() {
 }
 
 TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
-                                                         const RECT& window_rect) const {
+                                                        const RECT& window_rect) const {
   RECT taskbar_rect{};
   const bool has_env = TryGetEnvironmentTarget(&taskbar_rect);
 
@@ -555,23 +572,8 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
 
   if (!has_env && !has_matched_button) {
     HWND taskbar_hwnd = FindTaskbarWindowForRect(window_rect);
-    if (taskbar_hwnd != nullptr && GetWindowRect(taskbar_hwnd, &taskbar_rect)) {
-      // Successfully retrieved bounds
-    } else {
-      // Fallback: estimate taskbar based on difference between Monitor and WorkArea
-      const RECT& m = monitor_info.rcMonitor;
-      const RECT& w = monitor_info.rcWork;
-      if (w.bottom < m.bottom) {
-        taskbar_rect = RECT{m.left, w.bottom, m.right, m.bottom};
-      } else if (w.top > m.top) {
-        taskbar_rect = RECT{m.left, m.top, m.right, w.top};
-      } else if (w.left > m.left) {
-        taskbar_rect = RECT{m.left, m.top, w.left, m.bottom};
-      } else if (w.right < m.right) {
-        taskbar_rect = RECT{w.right, m.top, m.right, m.bottom};
-      } else {
-        taskbar_rect = RECT{m.left, m.bottom - 48, m.right, m.bottom};
-      }
+    if (taskbar_hwnd == nullptr || !GetWindowRect(taskbar_hwnd, &taskbar_rect)) {
+      taskbar_rect = EstimateTaskbarRect(monitor_info);
     }
   }
 
@@ -614,12 +616,10 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
   } else {
     const HWND dpi_window = FindTaskbarWindowForRect(window_rect);
     const bool taskbar_is_on_target_monitor =
-        dpi_window != nullptr &&
-        MonitorFromWindow(dpi_window, MONITOR_DEFAULTTONEAREST) == monitor;
-    const UINT target_dpi = taskbar_is_on_target_monitor ? GetDpiForWindow(dpi_window)
-                                                        : GetDpiForWindow(window);
-    const float dpi_scale =
-        static_cast<float>(std::max(target_dpi, 96U)) / USER_DEFAULT_SCREEN_DPI;
+        dpi_window != nullptr && MonitorFromWindow(dpi_window, MONITOR_DEFAULTTONEAREST) == monitor;
+    const UINT target_dpi =
+        taskbar_is_on_target_monitor ? GetDpiForWindow(dpi_window) : GetDpiForWindow(window);
+    const float dpi_scale = static_cast<float>(std::max(target_dpi, 96U)) / USER_DEFAULT_SCREEN_DPI;
     const float target_width = 72.0f * dpi_scale;
     const float target_height = 48.0f * dpi_scale;
     const minimize::animation::RectF taskbar = ToRectF(taskbar_rect);
@@ -647,8 +647,8 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
 
 bool TaskbarTargetProvider::TryGetEnvironmentTarget(RECT* target_rect) const {
   wchar_t value[128]{};
-  const DWORD length =
-      GetEnvironmentVariableW(L"MINIMIZE_TASKBAR_RECT", value, static_cast<DWORD>(std::size(value)));
+  const DWORD length = GetEnvironmentVariableW(L"MINIMIZE_TASKBAR_RECT", value,
+                                               static_cast<DWORD>(std::size(value)));
   if (length == 0 || length >= std::size(value)) {
     return false;
   }

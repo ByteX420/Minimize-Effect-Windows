@@ -32,23 +32,25 @@ std::wstring QuoteArgument(std::wstring_view argument) {
   return result;
 }
 
+bool TryReplaceFile(const std::filesystem::path& destination, const std::filesystem::path& incoming,
+                    const std::filesystem::path& backup) {
+  if (std::filesystem::exists(destination)) {
+    return ReplaceFileW(destination.c_str(), incoming.c_str(), backup.c_str(),
+                        REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr) != FALSE;
+  }
+  return MoveFileExW(incoming.c_str(), destination.c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+}
+
 bool ReplaceOneFile(const std::filesystem::path& source, const std::filesystem::path& destination,
                     const std::filesystem::path& backup) {
   const std::filesystem::path incoming = destination.wstring() + L".update-new";
   std::error_code error;
   std::filesystem::remove(incoming, error);
-  error.clear();
   if (!CopyFileW(source.c_str(), incoming.c_str(), FALSE)) return false;
+
   for (int attempt = 0; attempt < 80; ++attempt) {
-    if (std::filesystem::exists(destination)) {
-      if (ReplaceFileW(destination.c_str(), incoming.c_str(), backup.c_str(),
-                       REPLACEFILE_IGNORE_MERGE_ERRORS, nullptr, nullptr)) {
-        return true;
-      }
-    } else if (MoveFileExW(incoming.c_str(), destination.c_str(),
-                           MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
-      return true;
-    }
+    if (TryReplaceFile(destination, incoming, backup)) return true;
     Sleep(50);
   }
   std::filesystem::remove(incoming, error);
@@ -102,7 +104,7 @@ int RunInstaller(int argument_count, wchar_t* arguments[]) {
   if (ready_event) SetEvent(ready_event.get());
 
   wil::unique_handle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
-                                       static_cast<DWORD>(*parent_id)));
+                                        static_cast<DWORD>(*parent_id)));
   if (parent) WaitForSingleObject(parent.get(), 30000);
 
   std::error_code filesystem_error;
@@ -123,8 +125,8 @@ int RunInstaller(int argument_count, wchar_t* arguments[]) {
                               std::to_wstring(*left) + L" " + std::to_wstring(*top) + L" " +
                               std::to_wstring(*right) + L" " + std::to_wstring(*bottom);
   if (argument_count == 13) {
-    command_line += L" " + std::to_wstring(*parent_id) + L" " + QuoteArgument(arguments[9]) +
-                    L" " + arguments[10] + L" " + arguments[11] + L" " + arguments[12];
+    command_line += L" " + std::to_wstring(*parent_id) + L" " + QuoteArgument(arguments[9]) + L" " +
+                    arguments[10] + L" " + arguments[11] + L" " + arguments[12];
   }
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);

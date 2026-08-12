@@ -23,6 +23,21 @@
 
 namespace minimize::app {
 
+namespace {
+
+void PruneExpiredMinimizeSuppression(std::unordered_map<HWND, ULONGLONG>& suppression,
+                                     ULONGLONG now) {
+  for (auto iterator = suppression.begin(); iterator != suppression.end();) {
+    if (!IsWindow(iterator->first) || iterator->second <= now) {
+      iterator = suppression.erase(iterator);
+    } else {
+      ++iterator;
+    }
+  }
+}
+
+}  // namespace
+
 int ApplicationRuntime::FindRunForWindow(HWND window) const {
   for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
     if (runs_[i].animating_window == window) {
@@ -140,14 +155,7 @@ void ApplicationRuntime::CleanupRun(int run_index, RunCleanupOutcome outcome) {
       restore_feature_.Complete(window);
       constexpr ULONGLONG kPostRestoreMinimizeSuppressionMs = 150;
       const ULONGLONG now = GetTickCount64();
-      for (auto iterator = minimize_suppressed_until_.begin();
-           iterator != minimize_suppressed_until_.end();) {
-        if (!IsWindow(iterator->first) || iterator->second <= now) {
-          iterator = minimize_suppressed_until_.erase(iterator);
-        } else {
-          ++iterator;
-        }
-      }
+      PruneExpiredMinimizeSuppression(minimize_suppressed_until_, now);
       minimize_suppressed_until_[window] = now + kPostRestoreMinimizeSuppressionMs;
       RestoreWindowFromMinimizeState(window, true, !was_bulk_animation);
       slot.overlay.FinishRestoreAnimation();
@@ -284,8 +292,8 @@ void ApplicationRuntime::FinishActiveAnimation(int run_index) {
 
 bool ApplicationRuntime::OnRestoreAttempt(HWND window) {
   const features::RenderingPressure pressure = GetRenderingPressure();
-  const bool bulk_restore = bulk_window_action_ == BulkWindowAction::kRestore &&
-                            bulk_window_in_flight_ == window;
+  const bool bulk_restore =
+      bulk_window_action_ == BulkWindowAction::kRestore && bulk_window_in_flight_ == window;
   const bool handled = restore_feature_.Execute(
       window,
       features::RestoreExecutionContext{

@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "ui/components/combo.hpp"
 
@@ -18,6 +18,124 @@ using ::minimize::ui::theme::CenteredTextTop;
 using ::minimize::ui::theme::Metrics;
 std::unordered_map<ImGuiID, bool> g_combo_was_open;
 std::unordered_map<ImGuiID, bool> g_combo_closing;
+
+struct ComboItemRenderContext {
+  const MotionContext& motion_context;
+  ImDrawList* popup_draw = nullptr;
+  std::span<const char* const> items;
+  ImFont* item_font = nullptr;
+  int item_count = 0;
+  float row_height = 0.0f;
+  float popup_height = 0.0f;
+  float frame_width = 0.0f;
+  float open_amount = 0.0f;
+  float scale = 1.0f;
+  float alpha = 1.0f;
+  float content_top = 0.0f;
+  float text_pad_left = 0.0f;
+  float text_pad_check = 0.0f;
+  bool closing = false;
+  bool popup_disabled = false;
+};
+
+bool RenderComboItem(const ComboItemRenderContext& context, int index, int* current) {
+  const MotionContext& motion_context = context.motion_context;
+  ImDrawList* popup_draw = context.popup_draw;
+  const int item_count = context.item_count;
+  const float row_height = context.row_height;
+  const float popup_height = context.popup_height;
+  const float frame_width = context.frame_width;
+  const float open_amount = context.open_amount;
+  const bool closing = context.closing;
+  const bool popup_disabled = context.popup_disabled;
+  const std::span<const char* const> items = context.items;
+  const float scale = context.scale;
+  const float alpha = context.alpha;
+  const float content_top = context.content_top;
+  const float text_pad_left = context.text_pad_left;
+  const float text_pad_check = context.text_pad_check;
+  ImFont* item_font = context.item_font;
+
+  const float row_y = content_top + static_cast<float>(index) * row_height;
+  if (row_y + row_height < 0.0f || row_y > popup_height) return false;
+
+  ImGui::PushID(index);
+  const ImGuiID item_id = ImGui::GetID("##item_animation");
+  ImGui::SetCursorPos(ImVec2(0.0f, row_y));
+  const ImVec2 item_min = ImGui::GetCursorScreenPos();
+
+  float row_reveal = open_amount;
+  if (!closing) {
+    const float row_frac =
+        (static_cast<float>(index) + 0.55f) / std::max(1.0f, static_cast<float>(item_count));
+    const float row_t = std::clamp((open_amount - row_frac * 0.35f) / 0.65f, 0.0f, 1.0f);
+    row_reveal = row_t * row_t * (3.0f - 2.0f * row_t);
+  }
+
+  bool item_clicked = false;
+  bool item_hovered = false;
+  if (!popup_disabled) {
+    item_clicked = ImGui::InvisibleButton("##item", ImVec2(frame_width, row_height));
+    item_hovered = ImGui::IsItemHovered();
+  } else {
+    ImGui::Dummy(ImVec2(frame_width, row_height));
+  }
+
+  bool changed = false;
+  if (item_clicked) {
+    *current = index;
+    changed = true;
+  }
+
+  auto& motion = motion_context.system;
+  const auto& tokens = motion_context.tokens;
+
+  const bool is_selected = *current == index;
+  const float item_hover = motion.AnimateValue(
+      ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "hover"),
+      item_hovered ? 1.0f : 0.0f, tokens.hover_soft, 0.0f);
+  const float select_amt = motion.AnimateValue(
+      ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "select"),
+      is_selected ? 1.0f : 0.0f, tokens.select_sharp, 0.0f);
+  const float indent = motion.AnimateValue(
+      ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "indent"),
+      (item_hovered || is_selected) ? 1.0f : 0.0f, tokens.hover_soft, 0.0f);
+  const float pad_x = 5.0f * scale;
+  const float pad_y = 2.5f * scale;
+
+  if ((item_hover > 0.001f || select_amt > 0.001f) && row_reveal > 0.04f) {
+    const float fill = (0.10f * select_amt + 0.05f * item_hover * (1.0f - select_amt)) * row_reveal;
+    popup_draw->AddRectFilled(
+        ImVec2(item_min.x + pad_x, item_min.y + pad_y),
+        ImVec2(item_min.x + frame_width - pad_x, item_min.y + row_height - pad_y),
+        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill * alpha)), 6.0f * scale);
+  }
+
+  const float check_alpha =
+      (select_amt * 1.0f + item_hover * 0.38f * (1.0f - select_amt)) * row_reveal * alpha;
+  if (check_alpha > 0.02f) {
+    const ImVec2 cc(item_min.x + 12.0f * scale, item_min.y + row_height * 0.5f);
+    const float s = 3.0f * scale * (0.55f + 0.45f * std::max(select_amt, item_hover));
+    popup_draw->PathLineTo(ImVec2(cc.x - s, cc.y));
+    popup_draw->PathLineTo(ImVec2(cc.x - s * 0.25f, cc.y + s * 0.85f));
+    popup_draw->PathLineTo(ImVec2(cc.x + s * 1.15f, cc.y - s * 0.85f));
+    popup_draw->PathStroke(
+        ImGui::GetColorU32(ImVec4(ui::theme::kTextColor.x, ui::theme::kTextColor.y,
+                                  ui::theme::kTextColor.z, check_alpha)),
+        0, 1.5f * scale);
+  }
+
+  const float text_x = item_min.x + text_pad_left + (text_pad_check - text_pad_left) * indent;
+  ImVec4 item_color = detail::MixColor(ui::theme::kTextDimColor, ui::theme::kTextColor,
+                                       std::max(select_amt, item_hover * 0.85f));
+  item_color.w *= alpha * row_reveal;
+  popup_draw->AddText(item_font, item_font->FontSize,
+                      ImVec2(text_x, CenteredTextTop(item_font, item_min.y, row_height)),
+                      ImGui::GetColorU32(item_color), items[index]);
+  ImGui::PopID();
+  return changed;
+}
+
 }  // namespace
 
 bool Combo(const MotionContext& motion_context, const char* id, const char* label, int* current,
@@ -61,13 +179,11 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
 
   bool& was_open = g_combo_was_open[popup_id];
   bool& closing = g_combo_closing[popup_id];
-  // Asymmetric open/close curves — shared cubic felt too linear on the height expand.
   const ui::motion::MotionSpec& open_spec = tokens.popup_open;
   const ui::motion::MotionSpec& close_spec = tokens.popup_close;
   const ui::motion::MotionSpec& expand_spec = closing ? close_spec : open_spec;
 
-  // Non-modal dropdown: no ImGui popup stack. Modal popups blocked ampel hover and ate the
-  // first click on everything else — this keeps the rest of the UI live while open.
+  // The dropdown is deliberately non-modal so the rest of the settings UI remains interactive.
   if (pressed) {
     if (was_open && !closing) {
       closing = true;
@@ -89,7 +205,6 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
                      : 0.0f;
   (void)motion.AnimateValue(popup_alpha_key, open_visual ? 1.0f : 0.0f, expand_spec, 0.0f);
 
-  // Hover paint only while fully closed — open/closing uses open_amount tint only.
   const float hover_target = session_active ? 0.0f : (hovered ? 1.0f : 0.0f);
   const float frame_hover = motion.AnimateValue(detail::MotionKey("menu.combo", id, "frame-hover"),
                                                 hover_target, tokens.hover_soft, 0.0f);
@@ -121,21 +236,21 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
   if (frame_max.y + popup_full_h > viewport->Pos.y + viewport->Size.y) {
     opens_upward = true;
   }
-  // Slight visual overlap at the join so the parent bg never peeks through (esp. upward).
+  // A slight overlap prevents the parent background from showing through at the animated join.
   const float join_overlap = 1.5f * scale;
   ImVec2 popup_position(frame_min.x, frame_max.y - join_overlap);
   if (opens_upward) {
     popup_position.y = frame_min.y - popup_height + join_overlap;
   }
 
-  // Full open rect for outside-click tests (stable, not tied to animated height).
+  // Outside-click tests use the final list bounds, independent of the animated list height.
   ImVec2 list_hit_min(frame_min.x, frame_max.y - join_overlap);
   ImVec2 list_hit_max(frame_min.x + frame_width, frame_max.y - join_overlap + popup_full_h);
   if (opens_upward) {
     list_hit_min = ImVec2(frame_min.x, frame_min.y - popup_full_h + join_overlap);
     list_hit_max = ImVec2(frame_min.x + frame_width, frame_min.y + join_overlap);
   }
-  // Outside click closes without consuming the click — other widgets react on the first press.
+  // Closing does not consume the click, so the first click on another control still reaches it.
   if (was_open && !closing && !pressed && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
     const ImVec2 mouse = ImGui::GetIO().MousePos;
     const bool over_field = mouse.x >= frame_min.x && mouse.x <= frame_max.x &&
@@ -146,21 +261,17 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
   }
 
   ImDrawList* draw = ImGui::GetWindowDrawList();
-  // Connected expand = one growing shell. Idle field is fully rounded; once open, only the
-  // outer corners stay rounded — join-side corners are square so parent bg never peeks through
-  // the quarter-circle gaps (the classic free corner at a rounded field + square list join).
   const ImU32 frame_bg_u32 = ImGui::GetColorU32(frame_bg);
   const ImU32 frame_border_u32 = ImGui::GetColorU32(frame_border);
   const float th = std::max(1.0f, scale);
   const bool connected = open_amount > 0.001f && popup_height > 0.5f;
 
+  // While open, the field and list form one shell with a single outside border.
   if (!connected) {
     draw->AddRectFilled(frame_min, frame_max, frame_bg_u32, rounding, ImDrawFlags_RoundCornersAll);
     draw->AddRect(frame_min, frame_max, frame_border_u32, rounding, ImDrawFlags_RoundCornersAll,
                   th);
   } else {
-    // Field fill only — border comes from the unified outer stroke after the list is drawn.
-    // Down: round top only. Up: round bottom only. Join side is flat against the list.
     const ImDrawFlags field_corners =
         opens_upward ? ImDrawFlags_RoundCornersBottom : ImDrawFlags_RoundCornersTop;
     draw->AddRectFilled(frame_min, frame_max, frame_bg_u32, rounding, field_corners);
@@ -169,6 +280,7 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
   bool changed = false;
   const bool show_popup = session_active && popup_height > 0.5f;
   if (show_popup) {
+    // A regular ImGui window avoids the modal popup stack and keeps titlebar controls responsive.
     const std::string win_name = std::format("##combo_dd_{}", popup_id);
     ImGui::SetNextWindowPos(popup_position);
     ImGui::SetNextWindowSize(ImVec2(frame_width, popup_height));
@@ -178,7 +290,6 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.0f);
 
-    // Normal window (not a popup) so ampel / buttons / sliders stay hoverable and clickable.
     const ImGuiWindowFlags dd_flags =
         ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar |
@@ -197,20 +308,17 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
       const ImU32 body_u32 = ImGui::GetColorU32(body);
       const ImU32 border_u32 = ImGui::GetColorU32(body_border);
 
-      // Unified shell bounds (field + list). Outer silhouette is fully rounded; join is square.
       const ImVec2 shell_min = opens_upward ? popup_min : ImVec2(frame_min.x, frame_min.y);
       const ImVec2 shell_max = opens_upward ? ImVec2(frame_max.x, frame_max.y) : popup_max;
       const float shell_h = shell_max.y - shell_min.y;
       const float shell_r = std::min(rounding, std::max(1.0f, shell_h * 0.5f - 0.5f));
 
-      // List fill: round only the free end (matches outer stroke). Join side stays square.
-      // Using shell_r (not 0) so outer corners aren't free triangles outside a rounded border.
       const ImDrawFlags list_corners =
           opens_upward ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersBottom;
       const float list_r =
           std::min(shell_r, std::max(1.0f, (popup_max.y - popup_min.y) * 0.5f - 0.5f));
       popup_draw->AddRectFilled(popup_min, popup_max, body_u32, list_r, list_corners);
-      // Thin AA bridge at the join (full-width strip) so field/list never leave a hairline gap.
+      // Bridge the field/list seam, then draw one outline around the combined shell.
       const float seam = 2.0f * scale;
       if (opens_upward) {
         popup_draw->AddRectFilled(ImVec2(popup_min.x, popup_max.y - seam),
@@ -219,7 +327,6 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
         popup_draw->AddRectFilled(ImVec2(popup_min.x, popup_min.y - seam),
                                   ImVec2(popup_max.x, popup_min.y + seam), body_u32);
       }
-      // Single outer outline around the whole shell (FG so it isn't clipped / double-stroked).
       ImGui::GetForegroundDrawList()->AddRect(shell_min, shell_max, border_u32, shell_r,
                                               ImDrawFlags_RoundCornersAll, th);
 
@@ -235,81 +342,30 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
           opens_upward ? (popup_height - popup_pad_y - content_block_h) : popup_pad_y;
       const float text_pad_left = 11.0f * scale;
       const float text_pad_check = 24.0f * scale;
+      ComboItemRenderContext item_context{
+          .motion_context = motion_context,
+          .popup_draw = popup_draw,
+          .items = items,
+          .item_font = item_font,
+          .item_count = item_count,
+          .row_height = row_height,
+          .popup_height = popup_height,
+          .frame_width = frame_width,
+          .open_amount = open_amount,
+          .scale = scale,
+          .alpha = alpha,
+          .content_top = content_top,
+          .text_pad_left = text_pad_left,
+          .text_pad_check = text_pad_check,
+          .closing = closing,
+          .popup_disabled = popup_disabled,
+      };
       for (int index = 0; index < item_count; ++index) {
-        ImGui::PushID(index);
-        const float row_y = content_top + static_cast<float>(index) * row_height;
-        if (row_y + row_height < 0.0f || row_y > popup_height) {
-          ImGui::PopID();
-          continue;
-        }
-        const ImGuiID item_id = ImGui::GetID("##item_animation");
-        ImGui::SetCursorPos(ImVec2(0.0f, row_y));
-        const ImVec2 item_min = ImGui::GetCursorScreenPos();
-        const float item_width = frame_width;
-        float row_reveal = open_amount;
-        if (!closing) {
-          const float row_frac =
-              (static_cast<float>(index) + 0.55f) / std::max(1.0f, static_cast<float>(item_count));
-          const float row_t = std::clamp((open_amount - row_frac * 0.35f) / 0.65f, 0.0f, 1.0f);
-          row_reveal = row_t * row_t * (3.0f - 2.0f * row_t);
-        }
-        bool item_clicked = false;
-        bool item_hovered = false;
-        if (!popup_disabled) {
-          item_clicked = ImGui::InvisibleButton("##item", ImVec2(item_width, row_height));
-          item_hovered = ImGui::IsItemHovered();
-        } else {
-          ImGui::Dummy(ImVec2(item_width, row_height));
-        }
-        if (item_clicked) {
-          *current = index;
+        item_context.closing = closing;
+        if (RenderComboItem(item_context, index, current)) {
           changed = true;
           closing = true;
         }
-
-        const bool is_selected = *current == index;
-        const float item_hover = motion.AnimateValue(
-            ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "hover"),
-            item_hovered ? 1.0f : 0.0f, tokens.hover_soft, 0.0f);
-        const float select_amt = motion.AnimateValue(
-            ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "select"),
-            is_selected ? 1.0f : 0.0f, tokens.select_sharp, 0.0f);
-        const float indent = motion.AnimateValue(
-            ui::motion::MotionKey("menu.combo.item", std::to_string(item_id), "indent"),
-            (item_hovered || is_selected) ? 1.0f : 0.0f, tokens.hover_soft, 0.0f);
-        const float pad_x = 5.0f * scale;
-        const float pad_y = 2.5f * scale;
-        if ((item_hover > 0.001f || select_amt > 0.001f) && row_reveal > 0.04f) {
-          const float fill =
-              (0.10f * select_amt + 0.05f * item_hover * (1.0f - select_amt)) * row_reveal;
-          popup_draw->AddRectFilled(
-              ImVec2(item_min.x + pad_x, item_min.y + pad_y),
-              ImVec2(item_min.x + item_width - pad_x, item_min.y + row_height - pad_y),
-              ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill * alpha)), 6.0f * scale);
-        }
-
-        const float check_alpha =
-            (select_amt * 1.0f + item_hover * 0.38f * (1.0f - select_amt)) * row_reveal * alpha;
-        if (check_alpha > 0.02f) {
-          const ImVec2 cc(item_min.x + 12.0f * scale, item_min.y + row_height * 0.5f);
-          const float s = 3.0f * scale * (0.55f + 0.45f * std::max(select_amt, item_hover));
-          popup_draw->PathLineTo(ImVec2(cc.x - s, cc.y));
-          popup_draw->PathLineTo(ImVec2(cc.x - s * 0.25f, cc.y + s * 0.85f));
-          popup_draw->PathLineTo(ImVec2(cc.x + s * 1.15f, cc.y - s * 0.85f));
-          popup_draw->PathStroke(
-              ImGui::GetColorU32(ImVec4(ui::theme::kTextColor.x, ui::theme::kTextColor.y,
-                                        ui::theme::kTextColor.z, check_alpha)),
-              0, 1.5f * scale);
-        }
-
-        const float text_x = item_min.x + text_pad_left + (text_pad_check - text_pad_left) * indent;
-        ImVec4 item_color = detail::MixColor(ui::theme::kTextDimColor, ui::theme::kTextColor,
-                                             std::max(select_amt, item_hover * 0.85f));
-        item_color.w *= alpha * row_reveal;
-        popup_draw->AddText(item_font, item_font->FontSize,
-                            ImVec2(text_x, CenteredTextTop(item_font, item_min.y, row_height)),
-                            ImGui::GetColorU32(item_color), items[index]);
-        ImGui::PopID();
       }
       ImGui::PopStyleVar(2);
       if (popup_disabled) ImGui::EndDisabled();

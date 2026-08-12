@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "ui/hotkey_presenter.hpp"
 #include "ui/settings_window.hpp"
@@ -24,6 +24,86 @@ bool IsTitlebarDragRegion(HWND window, POINT point, float scale) {
 
 }  // namespace
 
+void SettingsWindow::HandleTrayCommand(ui::TrayCommand command) {
+  if (controller_ == nullptr) return;
+
+  switch (command) {
+    case ui::TrayCommand::kShowSettings:
+      Show(true);
+      break;
+    case ui::TrayCommand::kToggleEnabled:
+      controller_->actions().SetEnabled(!controller_->view_model().enabled);
+      break;
+    case ui::TrayCommand::kResume:
+      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kResume);
+      break;
+    case ui::TrayCommand::kPauseTenMinutes:
+      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kTenMinutes);
+      break;
+    case ui::TrayCommand::kPauseOneHour:
+      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kOneHour);
+      break;
+    case ui::TrayCommand::kPauseUntilRestart:
+      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kUntilRestart);
+      break;
+    case ui::TrayCommand::kRepairWindows:
+      controller_->actions().HealWindows();
+      break;
+    case ui::TrayCommand::kExit:
+      controller_->actions().RequestExit();
+      break;
+    case ui::TrayCommand::kNone:
+      break;
+  }
+}
+
+std::optional<LRESULT> SettingsWindow::HandleTitlebarMessage(HWND hwnd, UINT message,
+                                                             LPARAM l_param, float scale) {
+  switch (message) {
+    case WM_LBUTTONDOWN: {
+      const POINT point{static_cast<short>(LOWORD(l_param)), static_cast<short>(HIWORD(l_param))};
+      if (!IsTitlebarDragRegion(hwnd, point, scale)) return std::nullopt;
+      POINT cursor{};
+      RECT bounds{};
+      if (!GetCursorPos(&cursor) || !GetWindowRect(hwnd, &bounds)) return std::nullopt;
+      titlebar_dragging_ = true;
+      titlebar_drag_offset_ = {cursor.x - bounds.left, cursor.y - bounds.top};
+      SetCapture(hwnd);
+      ForceRender();
+      return 0;
+    }
+    case WM_MOUSEMOVE: {
+      if (!titlebar_dragging_) return std::nullopt;
+      POINT cursor{};
+      if (GetCursorPos(&cursor)) {
+        SetWindowPos(hwnd, nullptr, cursor.x - titlebar_drag_offset_.x,
+                     cursor.y - titlebar_drag_offset_.y, 0, 0,
+                     SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+      ForceRender();
+      return 0;
+    }
+    case WM_LBUTTONUP:
+      if (!titlebar_dragging_) return std::nullopt;
+      titlebar_dragging_ = false;
+      if (GetCapture() == hwnd) ReleaseCapture();
+      return 0;
+    case WM_CAPTURECHANGED:
+    case WM_CANCELMODE:
+      if (!titlebar_dragging_) return std::nullopt;
+      titlebar_dragging_ = false;
+      return 0;
+    case WM_LBUTTONDBLCLK: {
+      const POINT point{static_cast<short>(LOWORD(l_param)), static_cast<short>(HIWORD(l_param))};
+      if (!IsTitlebarDragRegion(hwnd, point, scale)) return std::nullopt;
+      ShowWindow(hwnd, IsZoomed(hwnd) != FALSE ? SW_RESTORE : SW_MAXIMIZE);
+      return 0;
+    }
+    default:
+      return std::nullopt;
+  }
+}
+
 LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_param,
                                             LPARAM l_param) {
   if (message == WM_NCCREATE) {
@@ -47,54 +127,11 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
     return 0;
   }
 
-  // Do not return HTCAPTION for the custom titlebar: the system's modal move loop would block
-  // the runtime loop and freeze active minimize/restore overlays. A captured client drag keeps
-  // normal message pumping and animation ticks alive while the menu is moved.
+  // Client-area dragging keeps the normal message pump running. Returning HTCAPTION would enter
+  // the system's modal move loop and freeze active minimize/restore animations.
   if (settings != nullptr) {
-    switch (message) {
-      case WM_LBUTTONDOWN: {
-        const POINT point{static_cast<short>(LOWORD(l_param)),
-                          static_cast<short>(HIWORD(l_param))};
-        if (!IsTitlebarDragRegion(hwnd, point, scale)) break;
-        POINT cursor{};
-        RECT bounds{};
-        if (GetCursorPos(&cursor) && GetWindowRect(hwnd, &bounds)) {
-          settings->titlebar_dragging_ = true;
-          settings->titlebar_drag_offset_ = {cursor.x - bounds.left, cursor.y - bounds.top};
-          SetCapture(hwnd);
-          settings->ForceRender();
-          return 0;
-        }
-        break;
-      }
-      case WM_MOUSEMOVE: {
-        if (!settings->titlebar_dragging_) break;
-        POINT cursor{};
-        if (GetCursorPos(&cursor)) {
-          SetWindowPos(hwnd, nullptr, cursor.x - settings->titlebar_drag_offset_.x,
-                       cursor.y - settings->titlebar_drag_offset_.y, 0, 0,
-                       SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-        }
-        settings->ForceRender();
-        return 0;
-      }
-      case WM_LBUTTONUP:
-        if (!settings->titlebar_dragging_) break;
-        settings->titlebar_dragging_ = false;
-        if (GetCapture() == hwnd) ReleaseCapture();
-        return 0;
-      case WM_CAPTURECHANGED:
-      case WM_CANCELMODE:
-        if (!settings->titlebar_dragging_) break;
-        settings->titlebar_dragging_ = false;
-        return 0;
-      case WM_LBUTTONDBLCLK: {
-        const POINT point{static_cast<short>(LOWORD(l_param)),
-                          static_cast<short>(HIWORD(l_param))};
-        if (!IsTitlebarDragRegion(hwnd, point, scale)) break;
-        ShowWindow(hwnd, IsZoomed(hwnd) != FALSE ? SW_RESTORE : SW_MAXIMIZE);
-        return 0;
-      }
+    if (const auto result = settings->HandleTitlebarMessage(hwnd, message, l_param, scale)) {
+      return *result;
     }
   }
 
@@ -137,40 +174,7 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
   if (message == ui::TrayIcon::kCallbackMessage && settings != nullptr) {
     const ui::TrayCommand command =
         settings->tray_icon_.HandleCallback(hwnd, l_param, settings->controller_->view_model());
-    switch (command) {
-      case ui::TrayCommand::kShowSettings:
-        settings->Show(true);
-        break;
-      case ui::TrayCommand::kToggleEnabled:
-        if (settings->controller_ != nullptr)
-          settings->controller_->actions().SetEnabled(!settings->controller_->view_model().enabled);
-        break;
-      case ui::TrayCommand::kResume:
-        if (settings->controller_ != nullptr)
-          settings->controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kResume);
-        break;
-      case ui::TrayCommand::kPauseTenMinutes:
-        if (settings->controller_ != nullptr)
-          settings->controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kTenMinutes);
-        break;
-      case ui::TrayCommand::kPauseOneHour:
-        if (settings->controller_ != nullptr)
-          settings->controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kOneHour);
-        break;
-      case ui::TrayCommand::kPauseUntilRestart:
-        if (settings->controller_ != nullptr)
-          settings->controller_->actions().SetTemporaryPause(
-              ui::TemporaryPauseAction::kUntilRestart);
-        break;
-      case ui::TrayCommand::kRepairWindows:
-        if (settings->controller_ != nullptr) settings->controller_->actions().HealWindows();
-        break;
-      case ui::TrayCommand::kExit:
-        if (settings->controller_ != nullptr) settings->controller_->actions().RequestExit();
-        break;
-      case ui::TrayCommand::kNone:
-        break;
-    }
+    settings->HandleTrayCommand(command);
     return 0;
   }
 
@@ -201,9 +205,7 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
     const bool imgui_handled =
         settings->renderer_.HandleWin32Message(hwnd, message, w_param, l_param);
     if (needs_render) settings->ForceRender();
-    if (imgui_handled) {
-      return TRUE;
-    }
+    if (imgui_handled) return TRUE;
   }
 
   switch (message) {
@@ -273,9 +275,7 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
       }
       return 0;
     case WM_CLOSE:
-      if (settings != nullptr) {
-        settings->HandleCloseRequest();
-      }
+      if (settings != nullptr) settings->HandleCloseRequest();
       return 0;
     case WM_NCHITTEST:
       return HTCLIENT;

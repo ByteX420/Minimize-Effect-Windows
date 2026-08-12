@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "features/restore_feature.hpp"
 
@@ -70,98 +70,66 @@ RestoreFeature::RestoreFeature(EffectPolicy& policy, WindowRecoveryService& reco
       minimize_(minimize),
       window_exclusions_(window_exclusions) {}
 
-bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context) {
-  if (!context.effect_active || context.renderer_recovering || context.shutting_down ||
-      context.overlay == nullptr || window == nullptr || !IsWindow(window) ||
-      context.animation_blocker == nullptr || context.animation_configuration == nullptr ||
-      context.rendering_pressure == nullptr) {
-    return false;
+bool RestoreFeature::HasManagedState(HWND window) const {
+  return snapshots_.Restore().count(window) != 0 ||
+         platform::windows::properties::HasFlag(
+             window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
+         platform::windows::properties::HasFlag(
+             window, platform::windows::properties::WindowFlag::kMovedOffscreen);
+}
+
+void RestoreFeature::CleanExcludedWindow(HWND window, const RestoreExecutionContext& context) {
+  platform::SetDwmTransitionsDisabled(window, false);
+  const int run_index = context.find_run(window);
+  if (run_index != -1) context.finish_run(run_index);
+  if (!HasManagedState(window)) return;
+
+  recovery_.Restore(window, false);
+  snapshots_.Restore().erase(window);
+  snapshots_.PreMinimize().erase(window);
+}
+
+bool RestoreFeature::ExecuteExistingRun(HWND window, int run_index,
+                                        const RestoreExecutionContext& context,
+                                        bool moved_offscreen, runtime::CachedSnapshot* snapshot) {
+  auto transaction = Begin(RestoreRequest{
+      .window = window,
+      .shutting_down = context.shutting_down,
+      .renderer_available = !context.renderer_recovering && context.overlay != nullptr,
+  });
+  if (!transaction.has_value()) return false;
+  minimize_.Complete(window);
+  runtime::AnimationRun& run = runs_[run_index];
+  if (run.pending_native_minimize_window == window) {
+    run.pending_native_minimize_window = nullptr;
   }
+  run.animating_restore = true;
+  run.overlay.ReverseAnimation(!context.defer_first_frame_wait);
+  run.direction_started_ms = GetTickCount64();
+  context.set_state(run_index, runtime::RunState::kRestoring);
+  run.live_animation_capture_enabled = false;
 
-  auto clean_excluded = [&] {
-    platform::SetDwmTransitionsDisabled(window, false);
-    const int run_index = context.find_run(window);
-    if (run_index != -1) context.finish_run(run_index);
-    const bool has_state =
-        snapshots_.Restore().count(window) != 0 ||
-        platform::windows::properties::HasFlag(
-            window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
-        platform::windows::properties::HasFlag(
-            window, platform::windows::properties::WindowFlag::kMovedOffscreen);
-    if (has_state) {
-      recovery_.Restore(window, false);
-      snapshots_.Restore().erase(window);
-      snapshots_.PreMinimize().erase(window);
-    }
-  };
-
-  if (window_exclusions_.IsExcluded(window)) {
-    clean_excluded();
-    return false;
-  }
-
-  const auto executable = platform::GetWindowExecutableName(window);
-  if (executable.has_value() && policy_.IsExcluded(*executable)) {
-    clean_excluded();
-    return false;
-  }
-  const bool has_managed_state =
-      snapshots_.Restore().count(window) != 0 ||
-      platform::windows::properties::HasFlag(
-          window, platform::windows::properties::WindowFlag::kIsMinimizing) ||
-      platform::windows::properties::HasFlag(
-          window, platform::windows::properties::WindowFlag::kMovedOffscreen);
-  if (recovery_.restoring() || window == context.overlay ||
-      (!has_managed_state && !platform::IsInterestingTopLevelWindow(window, context.overlay))) {
-    return false;
-  }
-
-  auto snapshot_iterator = snapshots_.Restore().find(window);
-  const bool has_snapshot = snapshot_iterator != snapshots_.Restore().end();
-  const bool moved_offscreen =
-      (has_snapshot && snapshot_iterator->second.moved_offscreen) ||
-      platform::windows::properties::HasFlag(
-          window, platform::windows::properties::WindowFlag::kMovedOffscreen);
-  const bool minimize_minimized =
-      has_snapshot || platform::windows::properties::HasFlag(
-                          window, platform::windows::properties::WindowFlag::kIsMinimizing);
-
-  int run_index = context.find_run(window);
-  if (run_index != -1) {
-    auto transaction = Begin(RestoreRequest{
-        .window = window,
-        .shutting_down = context.shutting_down,
-        .renderer_available = !context.renderer_recovering && context.overlay != nullptr,
-    });
-    if (!transaction.has_value()) return false;
-    minimize_.Complete(window);
-    runtime::AnimationRun& run = runs_[run_index];
-    if (run.pending_native_minimize_window == window) {
-      run.pending_native_minimize_window = nullptr;
-    }
-    run.animating_restore = true;
-    run.overlay.ReverseAnimation(!context.defer_first_frame_wait);
-    run.direction_started_ms = GetTickCount64();
-    context.set_state(run_index, runtime::RunState::kRestoring);
-    run.live_animation_capture_enabled = false;
-    if (IsIconic(window) == FALSE) {
-      (void)platform::SetWindowCloaked(window, true);
-      (void)platform::windows::properties::MakeTransparent(window);
-      if (!moved_offscreen) {
-        runtime::CachedSnapshot* snapshot = has_snapshot ? &snapshot_iterator->second : nullptr;
-        if (!PreservePlacementAndMarkOffscreen(window, snapshot)) {
-          transaction->HandOff();
-          context.abort_run(run_index);
-          return false;
-        }
+  if (IsIconic(window) == FALSE) {
+    (void)platform::SetWindowCloaked(window, true);
+    (void)platform::windows::properties::MakeTransparent(window);
+    if (!moved_offscreen) {
+      if (!PreservePlacementAndMarkOffscreen(window, snapshot)) {
+        transaction->HandOff();
+        context.abort_run(run_index);
+        return false;
       }
     }
-    transaction->HandOff();
-    return true;
   }
+  transaction->HandOff();
+  return true;
+}
 
+bool RestoreFeature::ExecuteNewRun(HWND window, const RestoreExecutionContext& context,
+                                   bool moved_offscreen, bool has_minimize_state,
+                                   runtime::CachedSnapshot* snapshot) {
   const bool window_is_iconic = IsIconic(window) != FALSE;
-  if (!minimize_minimized && !window_is_iconic) return false;
+  if (!has_minimize_state && !window_is_iconic) return false;
+
   auto transaction = Begin(RestoreRequest{
       .window = window,
       .shutting_down = context.shutting_down,
@@ -172,7 +140,6 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
   if (!window_is_iconic && !moved_offscreen) {
     (void)platform::SetWindowCloaked(window, true);
     (void)platform::windows::properties::MakeTransparent(window);
-    runtime::CachedSnapshot* snapshot = has_snapshot ? &snapshot_iterator->second : nullptr;
     if (!PreservePlacementAndMarkOffscreen(window, snapshot)) {
       snapshots_.Restore().erase(window);
       return false;
@@ -188,7 +155,7 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
     return false;
   }
 
-  run_index = context.find_available_run();
+  const int run_index = context.find_available_run();
   if (run_index == -1) {
     snapshots_.Restore().erase(window);
     return false;
@@ -215,6 +182,49 @@ bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context
   if (!context.defer_first_frame_wait) run.overlay.StartAnimationClock();
   transaction->HandOff();
   return true;
+}
+
+bool RestoreFeature::Execute(HWND window, const RestoreExecutionContext& context) {
+  if (!context.effect_active || context.renderer_recovering || context.shutting_down ||
+      context.overlay == nullptr || window == nullptr || !IsWindow(window) ||
+      context.animation_blocker == nullptr || context.animation_configuration == nullptr ||
+      context.rendering_pressure == nullptr) {
+    return false;
+  }
+
+  if (window_exclusions_.IsExcluded(window)) {
+    CleanExcludedWindow(window, context);
+    return false;
+  }
+
+  const auto executable = platform::GetWindowExecutableName(window);
+  if (executable.has_value() && policy_.IsExcluded(*executable)) {
+    CleanExcludedWindow(window, context);
+    return false;
+  }
+  const bool has_managed_state = HasManagedState(window);
+  if (recovery_.restoring() || window == context.overlay ||
+      (!has_managed_state && !platform::IsInterestingTopLevelWindow(window, context.overlay))) {
+    return false;
+  }
+
+  auto snapshot_iterator = snapshots_.Restore().find(window);
+  runtime::CachedSnapshot* snapshot =
+      snapshot_iterator != snapshots_.Restore().end() ? &snapshot_iterator->second : nullptr;
+  const bool moved_offscreen =
+      (snapshot != nullptr && snapshot->moved_offscreen) ||
+      platform::windows::properties::HasFlag(
+          window, platform::windows::properties::WindowFlag::kMovedOffscreen);
+  const bool has_minimize_state =
+      snapshot != nullptr || platform::windows::properties::HasFlag(
+                                 window, platform::windows::properties::WindowFlag::kIsMinimizing);
+
+  const int run_index = context.find_run(window);
+  if (run_index != -1) {
+    return ExecuteExistingRun(window, run_index, context, moved_offscreen, snapshot);
+  }
+
+  return ExecuteNewRun(window, context, moved_offscreen, has_minimize_state, snapshot);
 }
 
 std::optional<RestoreFeature::Transaction> RestoreFeature::Begin(const RestoreRequest& request) {

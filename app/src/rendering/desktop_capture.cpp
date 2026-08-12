@@ -65,8 +65,7 @@ bool ResolveGpuCopyRegion(const RECT& clipped_rect, const RECT& desktop_coordina
     physical_bottom = right;
   }
   if (physical_left < 0 || physical_top < 0 || physical_right <= physical_left ||
-      physical_bottom <= physical_top ||
-      physical_right > static_cast<int>(frame_desc.Width) ||
+      physical_bottom <= physical_top || physical_right > static_cast<int>(frame_desc.Width) ||
       physical_bottom > static_cast<int>(frame_desc.Height)) {
     return false;
   }
@@ -217,8 +216,7 @@ bool DesktopCapture::CaptureWindow(HWND window, const RECT& requested_screen_rec
   if (old_bitmap == nullptr || old_bitmap == HGDI_ERROR) {
     return false;
   }
-  auto restore_bitmap =
-      wil::scope_exit([&] { SelectObject(memory_dc.get(), old_bitmap); });
+  auto restore_bitmap = wil::scope_exit([&] { SelectObject(memory_dc.get(), old_bitmap); });
   RECT paint_rect{0, 0, window_width, window_height};
   HBRUSH black_brush = static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
   FillRect(memory_dc.get(), &paint_rect, black_brush);
@@ -435,8 +433,7 @@ bool DesktopCapture::CopyRegionFromFrame(OutputCapture* output, const RECT& scre
   output->duplication->GetDesc(&dupl_desc);
   const DXGI_MODE_ROTATION rotation = dupl_desc.Rotation;
 
-  if (rotation != DXGI_MODE_ROTATION_IDENTITY &&
-      rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
+  if (rotation != DXGI_MODE_ROTATION_IDENTITY && rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
     D3D11_TEXTURE2D_DESC frame_desc{};
     source_frame->GetDesc(&frame_desc);
     GpuCopyRegion copy_region;
@@ -565,8 +562,7 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
   output->duplication->GetDesc(&dupl_desc);
   const DXGI_MODE_ROTATION rotation = dupl_desc.Rotation;
 
-  if (rotation != DXGI_MODE_ROTATION_IDENTITY &&
-      rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
+  if (rotation != DXGI_MODE_ROTATION_IDENTITY && rotation != DXGI_MODE_ROTATION_UNSPECIFIED) {
     D3D11_TEXTURE2D_DESC frame_desc{};
     source_frame->GetDesc(&frame_desc);
     GpuCopyRegion copy_region;
@@ -583,58 +579,58 @@ bool DesktopCapture::CopyRegionIntoTexture(OutputCapture* output, const RECT& sc
     return true;
   }
 
-  if (rotation == DXGI_MODE_ROTATION_IDENTITY || rotation == DXGI_MODE_ROTATION_UNSPECIFIED) {
-    if (texture_desc.Width != static_cast<UINT>(width) ||
-        texture_desc.Height != static_cast<UINT>(height)) {
-      return false;
-    }
-    const bool can_use_dirty_rects =
-        (captured_texture->frame_generation + 1 == output->frame_generation) &&
-        !output->dirty_rects.empty();
+  if (texture_desc.Width != static_cast<UINT>(width) ||
+      texture_desc.Height != static_cast<UINT>(height)) {
+    return false;
+  }
 
-    if (can_use_dirty_rects) {
-      // Dirty rects are output-local space (relative to desktop_coordinates origin).
-      const RECT clipped_rect_output{
-          .left = clipped_rect.left - output->desktop_coordinates.left,
-          .top = clipped_rect.top - output->desktop_coordinates.top,
-          .right = clipped_rect.right - output->desktop_coordinates.left,
-          .bottom = clipped_rect.bottom - output->desktop_coordinates.top,
+  const bool can_use_dirty_rects =
+      (captured_texture->frame_generation + 1 == output->frame_generation) &&
+      !output->dirty_rects.empty();
+
+  if (can_use_dirty_rects) {
+    // DXGI reports dirty rectangles in output-local coordinates.
+    const RECT clipped_rect_output{
+        .left = clipped_rect.left - output->desktop_coordinates.left,
+        .top = clipped_rect.top - output->desktop_coordinates.top,
+        .right = clipped_rect.right - output->desktop_coordinates.left,
+        .bottom = clipped_rect.bottom - output->desktop_coordinates.top,
+    };
+    for (const RECT& dirty : output->dirty_rects) {
+      RECT clipped_dirty{};
+      if (!IntersectRect(&clipped_dirty, &dirty, &clipped_rect_output)) continue;
+      D3D11_BOX source_box{
+          .left = static_cast<UINT>(clipped_dirty.left),
+          .top = static_cast<UINT>(clipped_dirty.top),
+          .front = 0,
+          .right = static_cast<UINT>(clipped_dirty.right),
+          .bottom = static_cast<UINT>(clipped_dirty.bottom),
+          .back = 1,
       };
-      for (const RECT& dirty : output->dirty_rects) {
-        RECT clipped_dirty{};
-        if (!IntersectRect(&clipped_dirty, &dirty, &clipped_rect_output)) continue;
-        D3D11_BOX source_box{};
-        source_box.left = static_cast<UINT>(clipped_dirty.left);
-        source_box.top = static_cast<UINT>(clipped_dirty.top);
-        source_box.front = 0;
-        source_box.right = static_cast<UINT>(clipped_dirty.right);
-        source_box.bottom = static_cast<UINT>(clipped_dirty.bottom);
-        source_box.back = 1;
-        d3d_device_->context()->CopySubresourceRegion(
-            captured_texture->texture.Get(), 0,
-            static_cast<UINT>(clipped_dirty.left - clipped_rect_output.left),
-            static_cast<UINT>(clipped_dirty.top - clipped_rect_output.top), 0, source_frame, 0,
-            &source_box);
-      }
-      captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
-      captured_texture->frame_generation = output->frame_generation;
-      return true;
+      d3d_device_->context()->CopySubresourceRegion(
+          captured_texture->texture.Get(), 0,
+          static_cast<UINT>(clipped_dirty.left - clipped_rect_output.left),
+          static_cast<UINT>(clipped_dirty.top - clipped_rect_output.top), 0, source_frame, 0,
+          &source_box);
     }
-    D3D11_BOX source_box{};
-    source_box.left = static_cast<UINT>(clipped_rect.left - output->desktop_coordinates.left);
-    source_box.top = static_cast<UINT>(clipped_rect.top - output->desktop_coordinates.top);
-    source_box.front = 0;
-    source_box.right = static_cast<UINT>(clipped_rect.right - output->desktop_coordinates.left);
-    source_box.bottom = static_cast<UINT>(clipped_rect.bottom - output->desktop_coordinates.top);
-    source_box.back = 1;
-
-    d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
-                                                  source_frame, 0, &source_box);
     captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
     captured_texture->frame_generation = output->frame_generation;
     return true;
   }
-  return false;
+
+  D3D11_BOX source_box{
+      .left = static_cast<UINT>(clipped_rect.left - output->desktop_coordinates.left),
+      .top = static_cast<UINT>(clipped_rect.top - output->desktop_coordinates.top),
+      .front = 0,
+      .right = static_cast<UINT>(clipped_rect.right - output->desktop_coordinates.left),
+      .bottom = static_cast<UINT>(clipped_rect.bottom - output->desktop_coordinates.top),
+      .back = 1,
+  };
+  d3d_device_->context()->CopySubresourceRegion(captured_texture->texture.Get(), 0, 0, 0, 0,
+                                                source_frame, 0, &source_box);
+  captured_texture->visual_metadata.texture_rotation = TextureRotation::kIdentity;
+  captured_texture->frame_generation = output->frame_generation;
+  return true;
 }
 
 void DesktopCapture::MarkDeviceLost(const wchar_t* context, HRESULT hr) {

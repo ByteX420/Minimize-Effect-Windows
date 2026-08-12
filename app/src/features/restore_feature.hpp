@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <functional>
 #include <optional>
@@ -85,6 +85,12 @@ public:
 private:
   friend class Transaction;
   void HandOff(HWND window);
+  [[nodiscard]] bool HasManagedState(HWND window) const;
+  void CleanExcludedWindow(HWND window, const RestoreExecutionContext& context);
+  bool ExecuteExistingRun(HWND window, int run_index, const RestoreExecutionContext& context,
+                          bool moved_offscreen, runtime::CachedSnapshot* snapshot);
+  bool ExecuteNewRun(HWND window, const RestoreExecutionContext& context, bool moved_offscreen,
+                     bool has_minimize_state, runtime::CachedSnapshot* snapshot);
 
   EffectPolicy& policy_;
   WindowRecoveryService& recovery_;

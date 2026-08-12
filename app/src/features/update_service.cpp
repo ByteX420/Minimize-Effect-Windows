@@ -15,14 +15,13 @@
 #include <vector>
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Storage.Streams.h>
-#include <winrt/Windows.Web.Http.h>
 #include <winrt/Windows.Web.Http.Headers.h>
+#include <winrt/Windows.Web.Http.h>
 
 #include "miniz/miniz.h"
 #include "nlohmann/json.hpp"
 #include "picosha2/picosha2.h"
 #include "platform/windows/process_info.hpp"
-
 
 namespace minimize::features {
 namespace {
@@ -87,8 +86,7 @@ std::filesystem::path UpdateRoot() {
   return std::filesystem::path(local_app_data) / L"MinimizeEffect" / L"updates";
 }
 
-std::filesystem::path UpdateSibling(const std::filesystem::path& target,
-                                    std::wstring_view suffix) {
+std::filesystem::path UpdateSibling(const std::filesystem::path& target, std::wstring_view suffix) {
   return std::filesystem::path(target.wstring() + std::wstring(suffix));
 }
 
@@ -144,12 +142,11 @@ bool InstallStagedFiles(const std::filesystem::path& source_executable,
       MoveFileExW(target_executable.c_str(), executable_backup.c_str(),
                   MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
   const bool hook_moved =
-      executable_moved &&
-      MoveFileExW(target_hook.c_str(), hook_backup.c_str(),
-                  MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+      executable_moved && MoveFileExW(target_hook.c_str(), hook_backup.c_str(),
+                                      MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
   const bool executable_installed =
       hook_moved && MoveFileExW(executable_incoming.c_str(), target_executable.c_str(),
-                               MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
+                                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != FALSE;
   const bool hook_installed =
       executable_installed &&
       MoveFileExW(hook_incoming.c_str(), target_hook.c_str(),
@@ -181,6 +178,26 @@ struct ParsedVersion {
 
   [[nodiscard]] bool IsPrerelease() const noexcept { return !prerelease.empty(); }
 };
+
+std::optional<std::vector<std::string>> ParsePrereleaseIdentifiers(std::string_view prerelease) {
+  std::vector<std::string> identifiers;
+  while (!prerelease.empty()) {
+    const std::size_t separator = prerelease.find('.');
+    const std::string_view identifier = prerelease.substr(0, separator);
+    if (identifier.empty()) return std::nullopt;
+    for (const char character : identifier) {
+      const bool valid = (character >= '0' && character <= '9') ||
+                         (character >= 'A' && character <= 'Z') ||
+                         (character >= 'a' && character <= 'z') || character == '-';
+      if (!valid) return std::nullopt;
+    }
+    identifiers.emplace_back(identifier);
+    if (separator == std::string_view::npos) break;
+    if (separator + 1 == prerelease.size()) return std::nullopt;
+    prerelease.remove_prefix(separator + 1);
+  }
+  return identifiers;
+}
 
 std::optional<ParsedVersion> ParseVersion(std::string_view value) {
   while (!value.empty() && value.front() == ' ') value.remove_prefix(1);
@@ -225,20 +242,10 @@ std::optional<ParsedVersion> ParseVersion(std::string_view value) {
   }
   if (position != core.size() || result.count < 3) return std::nullopt;
 
-  while (!prerelease.empty()) {
-    const std::size_t separator = prerelease.find('.');
-    const std::string_view identifier = prerelease.substr(0, separator);
-    if (identifier.empty()) return std::nullopt;
-    for (const char character : identifier) {
-      const bool valid = (character >= '0' && character <= '9') ||
-                         (character >= 'A' && character <= 'Z') ||
-                         (character >= 'a' && character <= 'z') || character == '-';
-      if (!valid) return std::nullopt;
-    }
-    result.prerelease.emplace_back(identifier);
-    if (separator == std::string_view::npos) break;
-    prerelease.remove_prefix(separator + 1);
-    if (prerelease.empty()) return std::nullopt;
+  if (!prerelease.empty()) {
+    auto identifiers = ParsePrereleaseIdentifiers(prerelease);
+    if (!identifiers.has_value()) return std::nullopt;
+    result.prerelease = std::move(*identifiers);
   }
   return result;
 }
@@ -321,8 +328,7 @@ const nlohmann::json* SelectBestRelease(const nlohmann::json& releases,
     if (!tag) continue;
     auto version = ParseVersion(*tag);
     if (!version) continue;
-    if (!accept_prereleases &&
-        (version->IsPrerelease() || release.value("prerelease", false))) {
+    if (!accept_prereleases && (version->IsPrerelease() || release.value("prerelease", false))) {
       continue;
     }
     if (!best_version || CompareVersions(*version, *best_version) > 0) {
@@ -334,8 +340,7 @@ const nlohmann::json* SelectBestRelease(const nlohmann::json& releases,
 }
 
 std::optional<std::string> FindAssetValue(const nlohmann::json& release,
-                                          std::string_view asset_name,
-                                          std::string_view key) {
+                                          std::string_view asset_name, std::string_view key) {
   const auto assets = release.find("assets");
   if (assets == release.end() || !assets->is_array()) return std::nullopt;
   for (const auto& asset : *assets) {
@@ -388,11 +393,10 @@ HttpResponse HttpGet(std::wstring_view url, Sink&& sink, std::stop_token stop_to
     client.DefaultRequestHeaders().UserAgent().ParseAdd(L"MinimizeEffect-Updater/1.0");
     client.DefaultRequestHeaders().Accept().ParseAdd(L"application/vnd.github+json");
 
-    auto response_operation = client.GetAsync(
-        uri, winrt::Windows::Web::Http::HttpCompletionOption::ResponseHeadersRead);
-    std::stop_callback cancel_response(stop_token, [&response_operation] {
-      response_operation.Cancel();
-    });
+    auto response_operation =
+        client.GetAsync(uri, winrt::Windows::Web::Http::HttpCompletionOption::ResponseHeadersRead);
+    std::stop_callback cancel_response(stop_token,
+                                       [&response_operation] { response_operation.Cancel(); });
     const auto response = response_operation.get();
     result.status_code = static_cast<std::uint32_t>(response.StatusCode());
     if (!response.IsSuccessStatusCode()) {
@@ -412,9 +416,8 @@ HttpResponse HttpGet(std::wstring_view url, Sink&& sink, std::stop_token stop_to
         return result;
       }
       winrt::Windows::Storage::Streams::Buffer buffer(64 * 1024);
-      auto read_operation =
-          stream.ReadAsync(buffer, buffer.Capacity(),
-                           winrt::Windows::Storage::Streams::InputStreamOptions::None);
+      auto read_operation = stream.ReadAsync(
+          buffer, buffer.Capacity(), winrt::Windows::Storage::Streams::InputStreamOptions::None);
       std::stop_callback cancel_read(stop_token, [&read_operation] { read_operation.Cancel(); });
       const auto bytes = read_operation.get();
       if (bytes.Length() == 0) break;
@@ -425,8 +428,9 @@ HttpResponse HttpGet(std::wstring_view url, Sink&& sink, std::stop_token stop_to
       if (received > kMaximumDownloadBytes ||
           !sink(reinterpret_cast<const std::byte*>(chunk.data()),
                 static_cast<std::uint32_t>(chunk.size()), received, total)) {
-        result.error = received > kMaximumDownloadBytes ? "The update package is unexpectedly large."
-                                                        : "Could not save the update package.";
+        result.error = received > kMaximumDownloadBytes
+                           ? "The update package is unexpectedly large."
+                           : "Could not save the update package.";
         return result;
       }
     }
@@ -470,8 +474,7 @@ bool DownloadFile(std::wstring_view url, const std::filesystem::path& destinatio
   }
   auto response = HttpGet(
       url,
-      [&](const std::byte* data, std::uint32_t size, std::uint64_t received,
-          std::uint64_t total) {
+      [&](const std::byte* data, std::uint32_t size, std::uint64_t received, std::uint64_t total) {
         if (should_cancel()) return false;
         file.write(reinterpret_cast<const char*>(data), size);
         if (!file) return false;
@@ -490,8 +493,8 @@ bool DownloadFile(std::wstring_view url, const std::filesystem::path& destinatio
 std::optional<std::string> Sha256(const std::filesystem::path& path) {
   std::ifstream file(path, std::ios::binary);
   if (!file) return std::nullopt;
-  const std::string digest = picosha2::hash256_hex_string(
-      std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+  const std::string digest = picosha2::hash256_hex_string(std::istreambuf_iterator<char>(file),
+                                                          std::istreambuf_iterator<char>());
   return file.bad() ? std::nullopt : std::optional<std::string>(digest);
 }
 
@@ -516,6 +519,57 @@ std::optional<std::string> ParseChecksum(std::string_view value) {
   return std::nullopt;
 }
 
+bool ExtractZipEntry(mz_zip_archive* zip, mz_uint index, const std::filesystem::path& destination,
+                     std::string& error) {
+  mz_zip_archive_file_stat stat{};
+  if (!mz_zip_reader_file_stat(zip, index, &stat) || stat.m_is_encrypted) {
+    error = "The update package contains an unsupported ZIP entry.";
+    return false;
+  }
+
+  const std::filesystem::path relative =
+      std::filesystem::path(Utf8ToWide(stat.m_filename)).lexically_normal();
+  if (relative.empty() || relative.is_absolute() || relative.has_root_path() ||
+      std::find(relative.begin(), relative.end(), std::filesystem::path(L"..")) != relative.end()) {
+    error = "The update package contains an unsafe path.";
+    return false;
+  }
+
+  std::error_code filesystem_error;
+  const std::filesystem::path output = destination / relative;
+  if (stat.m_is_directory) {
+    std::filesystem::create_directories(output, filesystem_error);
+    if (filesystem_error) {
+      error = "Could not create a directory from the update package.";
+      return false;
+    }
+    return true;
+  }
+
+  std::filesystem::create_directories(output.parent_path(), filesystem_error);
+  if (filesystem_error) {
+    error = "Could not create the update package directory.";
+    return false;
+  }
+  std::ofstream extracted(output, std::ios::binary | std::ios::trunc);
+  if (!extracted) {
+    error = "Could not create an extracted update file.";
+    return false;
+  }
+  const auto write_file = [](void* opaque, mz_uint64 offset, const void* data,
+                             size_t size) -> size_t {
+    auto& stream = *static_cast<std::ofstream*>(opaque);
+    stream.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
+    stream.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+    return stream ? size : 0;
+  };
+  if (!mz_zip_reader_extract_to_callback(zip, index, write_file, &extracted, 0)) {
+    error = "The update package could not be extracted.";
+    return false;
+  }
+  return true;
+}
+
 bool ExtractZip(const std::filesystem::path& archive, const std::filesystem::path& destination,
                 std::string& error) {
   FILE* archive_file = nullptr;
@@ -535,54 +589,8 @@ bool ExtractZip(const std::filesystem::path& archive, const std::filesystem::pat
     ~ZipGuard() { mz_zip_reader_end(zip); }
   } zip_guard{&zip};
 
-  std::error_code filesystem_error;
   for (mz_uint index = 0; index < mz_zip_reader_get_num_files(&zip); ++index) {
-    mz_zip_archive_file_stat stat{};
-    if (!mz_zip_reader_file_stat(&zip, index, &stat) || stat.m_is_encrypted) {
-      error = "The update package contains an unsupported ZIP entry.";
-      return false;
-    }
-
-    const std::filesystem::path relative = std::filesystem::path(Utf8ToWide(stat.m_filename))
-                                               .lexically_normal();
-    if (relative.empty() || relative.is_absolute() || relative.has_root_path() ||
-        std::find(relative.begin(), relative.end(), std::filesystem::path(L"..")) !=
-            relative.end()) {
-      error = "The update package contains an unsafe path.";
-      return false;
-    }
-
-    const std::filesystem::path output = destination / relative;
-    if (stat.m_is_directory) {
-      std::filesystem::create_directories(output, filesystem_error);
-      if (filesystem_error) {
-        error = "Could not create a directory from the update package.";
-        return false;
-      }
-      continue;
-    }
-
-    std::filesystem::create_directories(output.parent_path(), filesystem_error);
-    if (filesystem_error) {
-      error = "Could not create the update package directory.";
-      return false;
-    }
-    std::ofstream extracted(output, std::ios::binary | std::ios::trunc);
-    if (!extracted) {
-      error = "Could not create an extracted update file.";
-      return false;
-    }
-    const auto write_file = [](void* opaque, mz_uint64 offset, const void* data,
-                               size_t size) -> size_t {
-      auto& stream = *static_cast<std::ofstream*>(opaque);
-      stream.seekp(static_cast<std::streamoff>(offset), std::ios::beg);
-      stream.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
-      return stream ? size : 0;
-    };
-    if (!mz_zip_reader_extract_to_callback(&zip, index, write_file, &extracted, 0)) {
-      error = "The update package could not be extracted.";
-      return false;
-    }
+    if (!ExtractZipEntry(&zip, index, destination, error)) return false;
   }
   return true;
 }
@@ -753,8 +761,7 @@ void UpdateService::CheckWorker(std::stop_token stop_token, bool user_initiated)
     return;
   }
   const UpdateSnapshot current = GetSnapshot();
-  const nlohmann::json* selected_release =
-      SelectBestRelease(releases, current.current_version);
+  const nlohmann::json* selected_release = SelectBestRelease(releases, current.current_version);
   if (!selected_release) {
     UpdateSnapshot failed = std::move(current);
     failed.phase = UpdatePhase::kError;
@@ -781,14 +788,12 @@ void UpdateService::CheckWorker(std::stop_token stop_token, bool user_initiated)
   const auto package_name = FindPackageName(release, latest);
   const auto package_url =
       package_name ? FindAssetUrl(release, *package_name) : std::optional<std::string>{};
-  const auto package_digest =
-      package_name ? FindAssetValue(release, *package_name, "digest")
-                   : std::optional<std::string>{};
+  const auto package_digest = package_name ? FindAssetValue(release, *package_name, "digest")
+                                           : std::optional<std::string>{};
   const auto api_checksum =
       package_digest ? ParseChecksum(*package_digest) : std::optional<std::string>{};
-  const auto checksum_url =
-      package_name ? FindAssetUrl(release, *package_name + ".sha256")
-                   : std::optional<std::string>{};
+  const auto checksum_url = package_name ? FindAssetUrl(release, *package_name + ".sha256")
+                                         : std::optional<std::string>{};
   UpdateSnapshot next = GetSnapshot();
   next.latest_version = latest;
   next.release_page_url = *release_page;
@@ -991,8 +996,8 @@ void UpdateService::DownloadWorker(std::stop_token stop_token) {
   SetSnapshot(std::move(ready));
 }
 
-bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page,
-                                    float page_scroll, bool maximized) {
+bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page, float page_scroll,
+                                    bool maximized) {
   std::filesystem::path staging;
   {
     std::scoped_lock lock(mutex_);
@@ -1055,17 +1060,14 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
     installer_started_at_ms_ = 0;
   }
 
-  const long scroll_milli =
-      static_cast<long>(std::clamp(page_scroll, 0.0f, 2147483.0f) * 1000.0f);
-  std::wstring command_line = QuoteArgument(current.wstring()) + L" --update-resume " +
-                              std::to_wstring(window_bounds.left) + L" " +
-                              std::to_wstring(window_bounds.top) + L" " +
-                              std::to_wstring(window_bounds.right) + L" " +
-                              std::to_wstring(window_bounds.bottom) + L" " +
-                              std::to_wstring(parent_process_id) + L" " +
-                              QuoteArgument(ready_event_name) + L" " +
-                              std::to_wstring(std::clamp(selected_page, 0, 7)) + L" " +
-                              std::to_wstring(scroll_milli) + L" " + (maximized ? L"1" : L"0");
+  const long scroll_milli = static_cast<long>(std::clamp(page_scroll, 0.0f, 2147483.0f) * 1000.0f);
+  std::wstring command_line =
+      QuoteArgument(current.wstring()) + L" --update-resume " +
+      std::to_wstring(window_bounds.left) + L" " + std::to_wstring(window_bounds.top) + L" " +
+      std::to_wstring(window_bounds.right) + L" " + std::to_wstring(window_bounds.bottom) + L" " +
+      std::to_wstring(parent_process_id) + L" " + QuoteArgument(ready_event_name) + L" " +
+      std::to_wstring(std::clamp(selected_page, 0, 7)) + L" " + std::to_wstring(scroll_milli) +
+      L" " + (maximized ? L"1" : L"0");
   STARTUPINFOW startup{};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process{};
@@ -1080,8 +1082,8 @@ bool UpdateService::LaunchInstaller(const RECT& window_bounds, int selected_page
     UpdateSnapshot failed = GetSnapshot();
     failed.phase = UpdatePhase::kError;
     failed.status = "Could not start the update handover";
-    failed.error = "Windows error " + std::to_string(GetLastError()) +
-                   ". Your current version was restored.";
+    failed.error =
+        "Windows error " + std::to_string(GetLastError()) + ". Your current version was restored.";
     SetSnapshot(std::move(failed));
     return false;
   }

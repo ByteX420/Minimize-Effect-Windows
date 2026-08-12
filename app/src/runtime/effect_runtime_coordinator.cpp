@@ -43,9 +43,9 @@ bool ApplicationRuntime::CreateAnimationRenderer() {
   }
   desktop_capture_ = std::make_unique<rendering::DesktopCapture>(d3d_device_.get());
   if (!EnsureAnimationRunCapacity(kInitialRunCount)) {
-    minimize::core::LogDebug(
-        L"Renderer",
-        L"Could not pre-initialize every animation run; idle prewarm will retry later");
+    minimize::core::LogDebug(L"Renderer",
+                             L"Could not pre-initialize every animation run; idle prewarm will "
+                             L"retry later");
   }
   return true;
 }
@@ -228,6 +228,86 @@ void ApplicationRuntime::HandleDisplayChange() {
   settings_window_.ForceRender();
 }
 
+bool ApplicationRuntime::HasActiveAnimationRuns() const {
+  return std::any_of(runs_.begin(), runs_.end(),
+                     [](const runtime::AnimationRun& run) { return run.overlay.active(); });
+}
+
+void ApplicationRuntime::ProcessPendingNativeMinimize(int index, runtime::AnimationRun& slot) {
+  if (slot.pending_native_minimize_window == nullptr) return;
+  platform::windows::TraceWindowEvent(
+      L"Run pending_native_minimize before CompletePendingNativeMinimize",
+      slot.pending_native_minimize_window);
+  const bool start_animation_clock =
+      !slot.bulk_animation || bulk_window_action_ == BulkWindowAction::kNone;
+  minimize_feature_.CompletePendingNativeMinimize(
+      index, start_animation_clock,
+      [this](int idx, runtime::RunState state) { SetRunState(idx, state); },
+      [this](int idx) { CleanupRun(idx, RunCleanupOutcome::kAborted); });
+  platform::windows::TraceWindowEvent(
+      L"Run pending_native_minimize after CompletePendingNativeMinimize",
+      slot.pending_native_minimize_window);
+}
+
+void ApplicationRuntime::ProcessUnstartedAnimationClock(int index, runtime::AnimationRun& slot) {
+  if (!slot.overlay.active() || slot.overlay.restoring() || slot.animating_window == nullptr)
+    return;
+  if (slot.overlay.clock_started()) return;
+
+  const bool is_iconic = IsIconic(slot.animating_window) != FALSE;
+  const bool is_moved = platform::windows::properties::HasFlag(
+      slot.animating_window, platform::windows::properties::WindowFlag::kMovedOffscreen);
+  if (is_iconic || is_moved) {
+    const bool wait_for_bulk_start =
+        slot.bulk_animation && bulk_window_action_ != BulkWindowAction::kNone;
+    if (wait_for_bulk_start) return;
+
+    slot.overlay.StartAnimationClock();
+    SetRunState(index, slot.animating_restore ? runtime::RunState::kRestoring
+                                              : runtime::RunState::kAnimating);
+    if (slot.pending_native_minimize_window == slot.animating_window) {
+      slot.pending_native_minimize_window = nullptr;
+    }
+    std::wcout << L"Target is minimized, starting animation clock.\n";
+    return;
+  }
+
+  const ULONGLONG now = GetTickCount64();
+  if (now - slot.direction_started_ms < 800) return;
+
+  HWND stalled_window = slot.animating_window;
+  platform::windows::TraceWindowEvent(L"Run minimize timeout aborting stalled animation",
+                                      stalled_window);
+  std::wcerr << L"Minimize minimize event timeout before native minimize completed; aborting "
+                L"animation.\n";
+  if (stalled_window != nullptr && IsWindow(stalled_window)) {
+    (void)platform::SetWindowCloaked(stalled_window, false);
+    platform::windows::properties::RestoreTransparency(stalled_window);
+    platform::windows::properties::ClearMinimizeState(stalled_window);
+    native_animation_blocker_.SetTransitionsDisabledForWindow(stalled_window, false);
+  }
+  CleanupRun(index, RunCleanupOutcome::kAborted);
+}
+
+void ApplicationRuntime::ProcessLiveCaptureRefresh(runtime::AnimationRun& slot) {
+  if (!slot.overlay.active() || !slot.live_animation_capture_enabled) return;
+  if (slot.animating_window == nullptr || !IsWindow(slot.animating_window) ||
+      IsIconic(slot.animating_window) || !IsWindowVisible(slot.animating_window)) {
+    slot.live_animation_capture_enabled = false;
+    return;
+  }
+  const ULONGLONG now_ms = GetTickCount64();
+  constexpr ULONGLONG refresh_interval_ms = 16;
+  if (now_ms - slot.last_animation_texture_refresh_ms < refresh_interval_ms) return;
+
+  slot.last_animation_texture_refresh_ms = now_ms;
+  if (desktop_capture_ == nullptr ||
+      !desktop_capture_->RefreshCapturedTexture(slot.live_animation_bounds,
+                                                slot.overlay.mutable_captured_texture())) {
+    slot.live_animation_capture_enabled = false;
+  }
+}
+
 MessageLoopWait ApplicationRuntime::TickRuntime() {
 #ifdef _DEBUG
   if (device_recovery_test_pending_) {
@@ -246,20 +326,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
 
   for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
     auto& slot = runs_[i];
-    if (slot.pending_native_minimize_window != nullptr) {
-      platform::windows::TraceWindowEvent(
-          L"Run pending_native_minimize before CompletePendingNativeMinimize",
-          slot.pending_native_minimize_window);
-      const bool start_animation_clock =
-          !slot.bulk_animation || bulk_window_action_ == BulkWindowAction::kNone;
-      minimize_feature_.CompletePendingNativeMinimize(
-          i, start_animation_clock,
-          [this](int index, runtime::RunState state) { SetRunState(index, state); },
-          [this](int index) { CleanupRun(index, RunCleanupOutcome::kAborted); });
-      platform::windows::TraceWindowEvent(
-          L"Run pending_native_minimize after CompletePendingNativeMinimize",
-          slot.pending_native_minimize_window);
-    }
+    ProcessPendingNativeMinimize(i, slot);
 
     if (slot.bulk_animation && bulk_window_action_ == BulkWindowAction::kNone &&
         slot.overlay.active() && !slot.overlay.clock_started()) {
@@ -268,60 +335,10 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
                                             : runtime::RunState::kAnimating);
     }
 
-    if (slot.overlay.active() && !slot.overlay.restoring() && slot.animating_window != nullptr) {
-      if (!slot.overlay.clock_started()) {
-        const bool is_iconic = IsIconic(slot.animating_window) != FALSE;
-        const bool is_moved = platform::windows::properties::HasFlag(
-            slot.animating_window, platform::windows::properties::WindowFlag::kMovedOffscreen);
-        if (is_iconic || is_moved) {
-          const bool wait_for_bulk_start =
-              slot.bulk_animation && bulk_window_action_ != BulkWindowAction::kNone;
-          if (!wait_for_bulk_start) {
-            slot.overlay.StartAnimationClock();
-            SetRunState(i, slot.animating_restore ? runtime::RunState::kRestoring
-                                                  : runtime::RunState::kAnimating);
-            if (slot.pending_native_minimize_window == slot.animating_window) {
-              slot.pending_native_minimize_window = nullptr;
-            }
-            std::wcout << L"Target is minimized, starting animation clock.\n";
-          }
-        } else {
-          const ULONGLONG now = GetTickCount64();
-          if (now - slot.direction_started_ms >= 800) {
-            HWND stalled_window = slot.animating_window;
-            platform::windows::TraceWindowEvent(L"Run minimize timeout aborting stalled animation",
-                                                stalled_window);
-            std::wcerr << L"Minimize minimize event timeout before native minimize completed; "
-                          L"aborting animation.\n";
-            if (stalled_window != nullptr && IsWindow(stalled_window)) {
-              (void)platform::SetWindowCloaked(stalled_window, false);
-              platform::windows::properties::RestoreTransparency(stalled_window);
-              platform::windows::properties::ClearMinimizeState(stalled_window);
-              native_animation_blocker_.SetTransitionsDisabledForWindow(stalled_window, false);
-            }
-            CleanupRun(i, RunCleanupOutcome::kAborted);
-          }
-        }
-      }
-    }
+    ProcessUnstartedAnimationClock(i, slot);
 
     const bool was_active = slot.overlay.active();
-    if (was_active && slot.live_animation_capture_enabled) {
-      if (slot.animating_window == nullptr || !IsWindow(slot.animating_window) ||
-          IsIconic(slot.animating_window) || !IsWindowVisible(slot.animating_window)) {
-        slot.live_animation_capture_enabled = false;
-      } else {
-        const ULONGLONG now_ms = GetTickCount64();
-        constexpr ULONGLONG refresh_interval_ms = 16;
-        if (now_ms - slot.last_animation_texture_refresh_ms >= refresh_interval_ms) {
-          slot.last_animation_texture_refresh_ms = now_ms;
-          if (!desktop_capture_->RefreshCapturedTexture(slot.live_animation_bounds,
-                                                        slot.overlay.mutable_captured_texture())) {
-            slot.live_animation_capture_enabled = false;
-          }
-        }
-      }
-    }
+    ProcessLiveCaptureRefresh(slot);
 
     bool animation_active = false;
     if (was_active) {
@@ -344,12 +361,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
     }
   }
 
-  bool any_active = false;
-  for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
-    if (runs_[i].overlay.active()) {
-      any_active = true;
-    }
-  }
+  bool any_active = HasActiveAnimationRuns();
 
   const ULONGLONG now_ms = GetTickCount64();
   if (IsEffectActive() && now_ms - last_snapshot_refresh_ms_ >= 120) {
@@ -366,15 +378,9 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
     HWND restore_candidate = nullptr;
     for (const auto& [hwnd, snapshot] : snapshot_cache_.Restore()) {
       (void)snapshot;
-      if (FindRunForWindow(hwnd) != -1) {
-        continue;
-      }
-      if (hwnd == nullptr || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) {
-        continue;
-      }
-      if (!restore_feature_.IsWindowRestored(hwnd)) {
-        continue;
-      }
+      if (FindRunForWindow(hwnd) != -1) continue;
+      if (hwnd == nullptr || !IsWindow(hwnd) || !IsWindowVisible(hwnd)) continue;
+      if (!restore_feature_.IsWindowRestored(hwnd)) continue;
       restore_candidate = hwnd;
       break;
     }
@@ -384,12 +390,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
     }
   }
 
-  any_active = false;
-  for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
-    if (runs_[i].overlay.active()) {
-      any_active = true;
-    }
-  }
+  any_active = HasActiveAnimationRuns();
 
   // Start at most one new bulk target per runtime tick. Its capture and run setup complete
   // before the next target is posted, while all established overlays continue concurrently.
@@ -398,12 +399,7 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
   UpdateStressTest();
 #endif
 
-  any_active = false;
-  for (int i = 0; i < static_cast<int>(runs_.size()); ++i) {
-    if (runs_[i].overlay.active()) {
-      any_active = true;
-    }
-  }
+  any_active = HasActiveAnimationRuns();
 
   if (bulk_hotkey_locked_ && bulk_window_action_ == BulkWindowAction::kNone) {
     const bool bulk_animation_active =
@@ -450,9 +446,8 @@ void ApplicationRuntime::AdvanceAnimationFrameDeadline(int run_index) {
 }
 
 void ApplicationRuntime::WaitForAnimationFrameOrMessage() {
-  const HANDLE settings_frame = settings_window_.WantsContinuousRendering()
-                                    ? settings_window_.RenderWaitHandle()
-                                    : nullptr;
+  const HANDLE settings_frame =
+      settings_window_.WantsContinuousRendering() ? settings_window_.RenderWaitHandle() : nullptr;
   frame_scheduler_.Wait(runs_, settings_frame);
 }
 
@@ -484,9 +479,8 @@ void ApplicationRuntime::WaitForIdleFrame() {
     update_deadline(renderer_recovery_.next_attempt_ms());
   }
 
-  const HANDLE settings_frame = settings_window_.WantsContinuousRendering()
-                                    ? settings_window_.RenderWaitHandle()
-                                    : nullptr;
+  const HANDLE settings_frame =
+      settings_window_.WantsContinuousRendering() ? settings_window_.RenderWaitHandle() : nullptr;
   frame_scheduler_.WaitIdle(deadline_ms, settings_frame);
 }
 

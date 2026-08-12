@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "platform/windows/global_hotkey_manager.hpp"
 
@@ -29,6 +29,21 @@ void GlobalHotkeyManager::UnregisterAll() {
   registered_.fill(false);
 }
 
+namespace {
+
+bool IsDuplicateBinding(
+    const std::array<settings::HotkeyBinding,
+                     static_cast<std::size_t>(settings::HotkeyAction::kCount)>& bindings,
+    std::size_t index) {
+  if (bindings[index].virtual_key == 0) return false;
+  for (std::size_t previous = 0; previous < index; ++previous) {
+    if (bindings[previous] == bindings[index]) return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 std::array<bool, static_cast<std::size_t>(settings::HotkeyAction::kCount)>
 GlobalHotkeyManager::RegisterAll(
     const std::array<settings::HotkeyBinding,
@@ -36,15 +51,7 @@ GlobalHotkeyManager::RegisterAll(
   UnregisterAll();
   std::array<bool, static_cast<std::size_t>(settings::HotkeyAction::kCount)> available{};
   for (std::size_t index = 0; index < bindings.size(); ++index) {
-    bool duplicate = false;
-    if (bindings[index].virtual_key != 0) {
-      for (std::size_t previous = 0; previous < index; ++previous) {
-        if (bindings[previous] == bindings[index]) {
-          duplicate = true;
-          break;
-        }
-      }
-    }
+    const bool duplicate = IsDuplicateBinding(bindings, index);
     available[index] =
         bindings[index].virtual_key == 0 ||
         (!duplicate && Register(static_cast<settings::HotkeyAction>(index), bindings[index]));
