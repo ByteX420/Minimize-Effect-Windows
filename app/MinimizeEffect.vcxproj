@@ -14,7 +14,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{778ab494-05e4-417f-b10a-bd4d620b0c00}</ProjectGuid>
-    <RootNamespace>macOSanimation</RootNamespace>
+    <RootNamespace>MinimizeEffect</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -396,7 +396,7 @@
           Inputs="$(ProjectDir)shaders\genie_mesh.hlsl;$(ProjectDir)shaders\compile.ps1"
           Outputs="$(IntDir)generated\genie_vertex_shader.hpp;$(IntDir)generated\genie_pixel_shader.hpp">
     <MakeDir Directories="$(IntDir)generated" />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)shaders\compile.ps1&quot; -Source &quot;$(ProjectDir)shaders\genie_mesh.hlsl&quot; -OutputDirectory &quot;$(IntDir)generated&quot;" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)shaders\compile.ps1&quot; -Source &quot;$(ProjectDir)shaders\genie_mesh.hlsl&quot; -OutputDirectory &quot;$(IntDir)generated&quot; -WindowsSdkBinPath &quot;$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64&quot;" />
   </Target>
   <Target Name="BuildMinimizeHook" BeforeTargets="PrepareForBuild"
           Condition="'$(DesignTimeBuild)' != 'true' and '$(SkipMinimizeHookBuild)' != 'true'">

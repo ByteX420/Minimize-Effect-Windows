@@ -6,7 +6,7 @@
 
 namespace minimize::platform::windows::properties {
 
-inline constexpr wchar_t kQueryWindowStateMessage[] = L"MinimizeQueryWindowState";
+inline constexpr wchar_t kQueryWindowStateMessage[] = L"MinimizeEffect.QueryWindowState";
 
 enum class WindowFlag {
   kAllowMinimize,

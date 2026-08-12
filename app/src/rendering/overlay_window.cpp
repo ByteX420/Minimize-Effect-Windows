@@ -99,8 +99,8 @@ bool OverlayWindow::Initialize(HINSTANCE instance, D3dDevice* d3d_device,
   device_lost_ = false;
   minimize_callback_ = std::move(minimize_callback);
   restore_callback_ = std::move(restore_callback);
-  minimize_attempt_message_ = RegisterWindowMessageW(L"MinimizeMinimizeAttempt");
-  restore_attempt_message_ = RegisterWindowMessageW(L"MinimizeRestoreAttempt");
+  minimize_attempt_message_ = RegisterWindowMessageW(L"MinimizeEffect.MinimizeAttempt");
+  restore_attempt_message_ = RegisterWindowMessageW(L"MinimizeEffect.RestoreAttempt");
   query_window_state_message_ =
       RegisterWindowMessageW(platform::windows::properties::kQueryWindowStateMessage);
   virtual_screen_rect_ = platform::GetVirtualScreenRect();
@@ -116,9 +116,10 @@ bool OverlayWindow::Initialize(HINSTANCE instance, D3dDevice* d3d_device,
     return false;
   }
 
-  AllowCrossIntegrityMessage(window_, minimize_attempt_message_, L"MinimizeMinimizeAttempt");
-  AllowCrossIntegrityMessage(window_, restore_attempt_message_, L"MinimizeRestoreAttempt");
-  AllowCrossIntegrityMessage(window_, query_window_state_message_, L"MinimizeQueryWindowState");
+  AllowCrossIntegrityMessage(window_, minimize_attempt_message_, L"MinimizeEffect.MinimizeAttempt");
+  AllowCrossIntegrityMessage(window_, restore_attempt_message_, L"MinimizeEffect.RestoreAttempt");
+  AllowCrossIntegrityMessage(window_, query_window_state_message_,
+                             L"MinimizeEffect.QueryWindowState");
 
   ClearFrame();
   ShowWindow(window_, SW_SHOWNOACTIVATE);

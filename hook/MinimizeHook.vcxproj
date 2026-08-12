@@ -14,7 +14,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{c1a09494-05e4-417f-b10a-bd4d620b0c00}</ProjectGuid>
-    <RootNamespace>macOSanimationhook</RootNamespace>
+    <RootNamespace>MinimizeEffectHook</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

@@ -14,7 +14,7 @@
 namespace minimize::platform {
 namespace {
 
-constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeSetWindowCloak";
+constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeEffect.SetWindowCloak";
 
 bool IsExcludedClassName(std::wstring_view class_name) {
   constexpr std::array<std::wstring_view, 8> kExcludedClassNames = {

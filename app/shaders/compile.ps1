@@ -2,16 +2,19 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Source,
     [Parameter(Mandatory = $true)]
-    [string]$OutputDirectory
+    [string]$OutputDirectory,
+    [Parameter(Mandatory = $true)]
+    [string]$WindowsSdkBinPath
 )
 
-$sdkBin = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
-$compiler = Get-ChildItem -Path $sdkBin -Filter fxc.exe -Recurse |
-    Where-Object { $_.DirectoryName -like '*\x64' } |
-    Sort-Object FullName -Descending |
-    Select-Object -First 1 -ExpandProperty FullName
+$compilerCandidates = @(
+    (Join-Path $WindowsSdkBinPath 'fxc.exe'),
+    (Join-Path $WindowsSdkBinPath 'x64\fxc.exe')
+)
+$compiler = $compilerCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+    Select-Object -First 1
 if (-not $compiler) {
-    throw "The Windows SDK HLSL compiler was not found under $sdkBin."
+    throw "The selected Windows SDK does not provide x64 fxc.exe. WindowsSdkBinPath=$WindowsSdkBinPath"
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null

@@ -44,7 +44,7 @@ state; shared pre-minimize and restore snapshots live in `SnapshotCache`.
 Foreign application window state (minimize/restore permissions, transparency, original placement)
 is managed centrally in process memory via `g_window_states` (`std::unordered_map<HWND, WindowState>`)
 protected by `std::shared_mutex` read/write locking. Win32 `SetPropW` kernel atom injections into third-party
-windows are avoided entirely; the CBT hook DLL queries state asynchronously via the `MinimizeQueryWindowState`
+windows are avoided entirely; the CBT hook DLL queries state asynchronously via the `MinimizeEffect.QueryWindowState`
 registered window message.
 
 The settings UI uses one `SettingsActions` boundary. Pages own presentation
@@ -71,8 +71,9 @@ partially completed work restores native window state.
 
 Animation and settings have separate rendering paths. `AnimationRenderer` and
 `OverlayRenderer` render the captured mesh using HLSL shaders (`genie_mesh.hlsl`)
-precompiled at build time via `fxc.exe` into C++ bytecode headers (`genie_vertex_shader.hpp`,
-`genie_pixel_shader.hpp`). Runtime `D3DCompile` calls and `d3dcompiler_47.dll` dependencies are eliminated.
+precompiled at build time by the `fxc.exe` from the Windows SDK selected by MSBuild into C++ bytecode
+headers (`genie_vertex_shader.hpp`, `genie_pixel_shader.hpp`). Runtime `D3DCompile` calls and
+`d3dcompiler_47.dll` dependencies are eliminated.
 
 DXGI Desktop Duplication captures are maintained entirely within GPU VRAM (`D3D11_USAGE_DEFAULT`).
 Subresource transfers use direct GPU-to-GPU `ID3D11DeviceContext::CopySubresourceRegion` without

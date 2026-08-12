@@ -17,7 +17,7 @@ It is a native **C++ / Direct3D 11 / DirectComposition** project with a polished
 ## Features
 
 - **Custom minimize & restore** — mesh-based deformation toward the taskbar (or a custom rect)
-- **Zero-copy GPU VRAM engine** — direct GPU-to-GPU `CopySubresourceRegion` texture transfers (0 ms CPU latency, 97.9% faster capture)
+- **GPU-resident capture path** — direct GPU-to-GPU `CopySubresourceRegion` texture transfers without CPU staging copies
 - **Precompiled HLSL shaders** — shaders precompiled into C++ headers at build time (no runtime `D3DCompile` or `d3dcompiler_47.dll` dependency)
 - **In-memory window state** — thread-safe `unordered_map` state storage (zero Win32 `SetPropW` kernel atom table pollution)
 - **DWM Native dragging** — `WM_NCHITTEST` returning `HTCAPTION` for smooth window movement and Windows 11 Snap Layouts
@@ -42,7 +42,7 @@ Windows does **not** expose a public API that means “replace this DWM minimize
 
 1. **Detect** minimize/restore via WinEvents and a **CBT hook DLL** (`MinimizeEffectHook.dll`).
 2. **Policy** decides whether the effect applies (enabled, pause, fullscreen, battery saver, event-driven power setting notifications, exclusions).
-3. **Suppress** the stock transition with `DwmSetWindowAttribute(DWMWA_TRANSITIONS_FORCEDISABLED)` and temporary `SystemParametersInfo(SPI_SETANIMATION)` changes (restored on exit).
+3. **Suppress** the stock transition per window with `DwmSetWindowAttribute(DWMWA_TRANSITIONS_FORCEDISABLED)`, then restore that override during effect cleanup.
 4. **Capture** the visible window region via **DXGI Desktop Duplication** directly into GPU VRAM (`ID3D11Texture2D`) without CPU Map/Unmap staging buffers.
 5. **Composite** a transparent topmost overlay with **DirectComposition** (`wil::com_ptr`) + a D3D11 swap chain.
 6. **Deform** a textured mesh using precompiled vertex/pixel shaders (Minimize curve / squash) each frame until the window lands at the taskbar target.
@@ -63,10 +63,10 @@ For a deeper technical write-up, see [`docs/architecture.md`](docs/architecture.
 
 ### Build
 
-- **Visual Studio 2022 or newer** (or VS 18 / Build Tools) with:
+- **Visual Studio 18** or the matching **Build Tools** with:
   - Desktop development with C++
   - MSBuild
-  - MSVC toolset (project uses `v145` / latest)
+  - MSVC `v145` toolset
 - **x64** platform only
 - No separate vcpkg step for core deps — **ImGui** and **FreeType** are vendored under `app/third_party/`
 
@@ -304,10 +304,10 @@ exist only inside the runner; `app/MinimizeEffect.rc` remains the independent st
 1. On `dev` (or a branch), bump the version macros in `app/MinimizeEffect.rc`:
 
    ```c
-   #define MINIMIZE_FILE_VERSION      1,3,0,0
-   #define MINIMIZE_PRODUCT_VERSION   1,3,0,0
-   #define MINIMIZE_FILE_VERSION_STR  "1.3.0\0"
-   #define MINIMIZE_PRODUCT_VERSION_STR "1.3.0\0"
+   #define MINIMIZE_FILE_VERSION      1,5,2,0
+   #define MINIMIZE_PRODUCT_VERSION   1,5,2,0
+   #define MINIMIZE_FILE_VERSION_STR  "1.5.2\0"
+   #define MINIMIZE_PRODUCT_VERSION_STR "1.5.2\0"
    ```
 
 2. After testing on `beta`, merge into **`stable`** and push:

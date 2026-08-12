@@ -9,9 +9,9 @@
 
 namespace {
 
-constexpr wchar_t kOverlayMessageName[] = L"MinimizeMinimizeAttempt";
-constexpr wchar_t kRestoreMessageName[] = L"MinimizeRestoreAttempt";
-constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeSetWindowCloak";
+constexpr wchar_t kOverlayMessageName[] = L"MinimizeEffect.MinimizeAttempt";
+constexpr wchar_t kRestoreMessageName[] = L"MinimizeEffect.RestoreAttempt";
+constexpr wchar_t kSetWindowCloakMessageName[] = L"MinimizeEffect.SetWindowCloak";
 constexpr wchar_t kOverlayClassName[] = L"MinimizeEffectOverlayWindow";
 
 [[nodiscard]] constexpr bool IsMinimizeCommand(int show_cmd) noexcept {
@@ -101,14 +101,16 @@ bool TryHandleMinimize(HWND overlay_window, HWND target_window, LPARAM l_param,
   if (overlay_window == nullptr || message == 0) return false;
 
   if (PostMessageW(overlay_window, message, reinterpret_cast<WPARAM>(target_window), l_param)) {
-    minimize::core::LogTrace(
-        L"HookDLL", L"PostMessage(MinimizeMinimizeAttempt) succeeded; blocking native minimize");
+    minimize::core::LogTrace(L"HookDLL",
+                             L"PostMessage(MinimizeEffect.MinimizeAttempt) succeeded; blocking "
+                             L"native minimize");
     return true;
   }
   const DWORD error = GetLastError();
   if (minimize::core::IsTraceLoggingEnabled()) {
     minimize::core::LogDebug(
-        L"HookDLL", std::format(L"PostMessage(MinimizeMinimizeAttempt) failed error={}", error));
+        L"HookDLL",
+        std::format(L"PostMessage(MinimizeEffect.MinimizeAttempt) failed error={}", error));
   }
   return false;
 }
@@ -138,7 +140,8 @@ bool TryHandleRestore(HWND overlay_window, HWND target_window, LPARAM l_param,
     if (minimize::core::IsTraceLoggingEnabled()) {
       minimize::core::LogDebug(
           L"HookDLL",
-          std::format(L"SendMessageTimeout(MinimizeRestoreAttempt) failed error={}", error));
+          std::format(L"SendMessageTimeout(MinimizeEffect.RestoreAttempt) failed error={}",
+                      error));
     }
   }
   return handled != 0;
