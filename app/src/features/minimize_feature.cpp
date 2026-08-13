@@ -161,7 +161,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     return true;
   }
   if (restore_snapshot != snapshots_.Restore().end()) {
-    const bool still_minimized = IsIconic(window) != FALSE ||
+    const bool still_minimized =
+        IsIconic(window) != FALSE ||
         platform::windows::properties::HasFlag(
             window, platform::windows::properties::WindowFlag::kMovedOffscreen);
     if (still_minimized) return true;
@@ -223,8 +224,7 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   if (already_minimized && has_cached) {
     source_bounds = pre_minimize->second.bounds;
     captured_texture = pre_minimize->second.texture;
-  } else if (!already_minimized && context.force_animation &&
-             context.take_prepared_capture &&
+  } else if (!already_minimized && context.force_animation && context.take_prepared_capture &&
              context.take_prepared_capture(window, &captured_texture, &captured_window_bounds)) {
     source_bounds = captured_window_bounds;
   } else if (!already_minimized && context.force_animation && !IsHungAppWindow(window) &&
@@ -234,8 +234,7 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     // one fresh desktop-duplication frame per window while preserving the native-resolution image.
     source_bounds = captured_window_bounds;
   } else if (!already_minimized && !context.force_animation && has_cached &&
-             EqualRect(&pre_minimize->second.bounds, &source_bounds) &&
-             !prefer_window_capture) {
+             EqualRect(&pre_minimize->second.bounds, &source_bounds) && !prefer_window_capture) {
     // The 120 ms pre-minimize snapshot already holds texture, SRV and mask for this window.
     // Reuse those GPU resources and only refresh the pixel content in place; this avoids
     // allocating a new texture + SRV + mask for the real minimize.
@@ -344,8 +343,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
     return true;
   }
 
-  if (!run.overlay.StartAnimation(captured_texture, ToRectF(source_bounds), target.rect, target.edge,
-                                  0.0f, 1.0f, !context.force_animation,
+  if (!run.overlay.StartAnimation(captured_texture, ToRectF(source_bounds), target.rect,
+                                  target.edge, 0.0f, 1.0f, !context.force_animation,
                                   !context.force_animation)) {
     transaction->HandOff();
     context.abort_run(run_index);
@@ -363,8 +362,8 @@ bool MinimizeFeature::Execute(HWND window, const MinimizeExecutionContext& conte
   context.animation_blocker->SetTransitionsDisabledForWindow(window, true);
   platform::windows::properties::StoreOriginalPlacement(window, original_rect);
   platform::windows::properties::StoreWasMaximized(window, was_maximized);
-  platform::windows::properties::SetFlag(
-      window, platform::windows::properties::WindowFlag::kIsMinimizing);
+  platform::windows::properties::SetFlag(window,
+                                         platform::windows::properties::WindowFlag::kIsMinimizing);
 
   if (IsIconic(window) == FALSE) {
     platform::windows::properties::SetFlag(
@@ -417,8 +416,8 @@ bool MinimizeFeature::CommitPreparedBulkMinimize(
   platform::windows::properties::StoreOriginalPlacement(window,
                                                         snapshot->second.original_placement);
   platform::windows::properties::StoreWasMaximized(window, snapshot->second.was_maximized);
-  platform::windows::properties::SetFlag(
-      window, platform::windows::properties::WindowFlag::kIsMinimizing);
+  platform::windows::properties::SetFlag(window,
+                                         platform::windows::properties::WindowFlag::kIsMinimizing);
 
   if (IsIconic(window) == FALSE) {
     platform::windows::properties::SetFlag(
@@ -515,8 +514,8 @@ void MinimizeFeature::UpdatePreMinimizeSnapshot(HWND window, HWND overlay,
     if (captured) snapshot_bounds = captured_window_bounds;
   }
   if (!captured) {
-    captured = capture->CaptureRegion(window, *animation_bounds, &captured_texture,
-                                      &visual_metadata);
+    captured =
+        capture->CaptureRegion(window, *animation_bounds, &captured_texture, &visual_metadata);
   }
   if (!captured) {
     RECT captured_window_bounds{};
@@ -684,8 +683,8 @@ bool MinimizeFeature::TickSeedSnapshotsForIconicWindows() {
     ok = false;
   }
 
-  platform::windows::properties::SetFlag(
-      candidate.window, platform::windows::properties::WindowFlag::kAllowMinimize);
+  platform::windows::properties::SetFlag(candidate.window,
+                                         platform::windows::properties::WindowFlag::kAllowMinimize);
   WINDOWPLACEMENT placement = candidate.placement;
   placement.showCmd = SW_SHOWMINNOACTIVE;
   SetWindowPlacement(candidate.window, &placement);

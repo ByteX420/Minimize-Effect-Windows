@@ -38,6 +38,7 @@ public:
   [[nodiscard]] bool battery_saver_active() const { return battery_saver_active_; }
   [[nodiscard]] bool smart_skip_enabled() const { return settings_.smart_skip_under_load; }
   [[nodiscard]] bool smart_skip_latched() const { return smart_skip_latched_; }
+  [[nodiscard]] bool fullscreen_suppressed() const { return fullscreen_suppressed_; }
 
 private:
   [[nodiscard]] int ScoreLoad(const RenderingPressure& pressure) const;

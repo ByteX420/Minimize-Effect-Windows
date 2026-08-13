@@ -29,7 +29,7 @@ It is a native **C++ / Direct3D 11 / DirectComposition** project with a polished
 - **System integration** — run at startup, start minimized, tray icon, close-to-tray or exit (managed with Microsoft WIL)
 - **Hotkeys** — toggle the effect, open settings, repair windows (configurable)
 - **Settings UI** — dark macOS-inspired shell (traffic lights, sidebar, cards, motion)
-- **Repair / diagnostics** — status for effect, hook, renderer, D3D device, display
+- **Repair / diagnostics** — status for effect, hook, renderer, D3D device, display, and administrator restart
 - **Native animation suppression** — disables classic shell + DWM transitions while running
 - **Device-lost recovery** — recreates capture/overlay/settings renderers after GPU resets
 - **Opt-in software updates** — in-process zip extraction (`miniz`), WinHTTP client, `PicoSHA2` hashing, and `nlohmann::json`

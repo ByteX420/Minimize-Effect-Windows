@@ -19,6 +19,17 @@ std::optional<minimize::app::ApplicationLaunchOptions> ParseLaunchOptions(int ar
                                                                           wchar_t* arguments[]) {
   minimize::app::ApplicationLaunchOptions options{};
   if (argument_count == 1) return options;
+  if (argument_count == 3 && std::wstring_view(arguments[1]) == L"--elevated-resume") {
+    wchar_t* end = nullptr;
+    const unsigned long parent = wcstoul(arguments[2], &end, 10);
+    if (end == arguments[2] || *end != L'\0' || parent == 0 ||
+        parent > std::numeric_limits<DWORD>::max()) {
+      return std::nullopt;
+    }
+    options.force_show_settings = true;
+    options.elevation_parent_process_id = static_cast<DWORD>(parent);
+    return options;
+  }
   if ((argument_count != 6 && argument_count != 11) ||
       std::wstring_view(arguments[1]) != L"--update-resume") {
     return std::nullopt;
@@ -91,7 +102,7 @@ int wmain(int argument_count, wchar_t* arguments[]) {
   if (!launch_options) return ERROR_INVALID_PARAMETER;
 
   minimize::platform::windows::SingleInstanceGuard instance_guard;
-  if (!launch_options->IsUpdateHandover()) {
+  if (!launch_options->IsHandover()) {
     const auto instance_result = instance_guard.Acquire();
     if (instance_result == minimize::platform::windows::SingleInstanceResult::kAlreadyRunning) {
       (void)minimize::platform::windows::SingleInstanceGuard::ActivateExistingInstance(5000);
@@ -144,6 +155,25 @@ int wmain(int argument_count, wchar_t* arguments[]) {
     if (!application.CompleteUpdateHandover()) {
       return 1;
     }
+  }
+
+  if (launch_options->IsElevationHandover()) {
+    wil::unique_handle parent(OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE,
+                                          launch_options->elevation_parent_process_id));
+    const std::optional<int> parent_exit_code =
+        parent ? WaitForUpdateParentWithMessagePump(parent.get(), application) : std::nullopt;
+    if (parent_exit_code.has_value()) return *parent_exit_code;
+
+    bool acquired = false;
+    for (int attempt = 0; attempt < 100; ++attempt) {
+      const auto instance_result = instance_guard.Acquire();
+      if (instance_result == minimize::platform::windows::SingleInstanceResult::kPrimary) {
+        acquired = true;
+        break;
+      }
+      Sleep(50);
+    }
+    if (!acquired || !application.CompleteUpdateHandover()) return 1;
   }
 
   return application.Run();

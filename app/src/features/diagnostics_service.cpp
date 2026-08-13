@@ -43,6 +43,8 @@ DiagnosticsSnapshot DiagnosticsService::Build(const DiagnosticsContext& context)
   snapshot.active_animations = std::to_string(context.active_animations);
   snapshot.watchdog = "Per-window cleanup enabled";
   snapshot.startup_repair = context.startup_repair;
+  snapshot.elevated = context.elevated;
+  snapshot.privilege = context.elevated ? "Administrator" : "Standard user";
   snapshot.log_folder_size =
       std::format("{:.2f} MB", core::DebugLogFolderSize() / (1024.0 * 1024.0));
   snapshot.version = platform::ExecutableProductVersion();
@@ -138,6 +140,7 @@ DiagnosticsSnapshot DiagnosticsService::Build(const DiagnosticsContext& context)
          << "Windows: " << snapshot.windows_version << "\r\n"
          << "Graphics adapter: " << snapshot.graphics_adapter << "\r\n"
          << "Effect: " << snapshot.effect << "\r\n"
+         << "Privilege: " << snapshot.privilege << "\r\n"
          << "Hook: " << snapshot.hook << "\r\n"
          << "Renderer: " << snapshot.renderer << "\r\n"
          << "D3D Device: " << snapshot.d3d_device << "\r\n"
@@ -187,6 +190,8 @@ bool DiagnosticsService::Execute(DiagnosticsAction action,
       return actions.repair_windows && actions.repair_windows();
     case DiagnosticsAction::kRestartRenderer:
       return actions.restart_renderer && actions.restart_renderer();
+    case DiagnosticsAction::kRestartElevated:
+      return actions.restart_elevated && actions.restart_elevated();
 #ifdef _DEBUG
     case DiagnosticsAction::kStressTest:
       return actions.run_stress_test && actions.run_stress_test();

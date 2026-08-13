@@ -52,6 +52,8 @@ struct DiagnosticsSnapshot {
   std::string window_monitor;
   std::string taskbar;
   std::string startup_repair;
+  std::string privilege;
+  bool elevated = false;
   std::string version;
   std::string windows_version;
   std::string graphics_adapter;
@@ -70,6 +72,7 @@ struct DiagnosticsContext {
   const rendering::D3dDevice* d3d_device = nullptr;
   int active_animations = 0;
   std::string startup_repair;
+  bool elevated = false;
   HWND reference_window = nullptr;
   const platform::TaskbarTargetProvider* taskbar_targets = nullptr;
 };
@@ -79,6 +82,7 @@ enum class DiagnosticsAction {
   kOpenLogFolder,
   kRepairWindows,
   kRestartRenderer,
+  kRestartElevated,
 #ifdef _DEBUG
   kStressTest,
 #endif
@@ -89,6 +93,7 @@ struct DiagnosticsActions {
   std::function<std::string()> build_report;
   std::function<bool()> repair_windows;
   std::function<bool()> restart_renderer;
+  std::function<bool()> restart_elevated;
 #ifdef _DEBUG
   std::function<bool()> run_stress_test;
 #endif

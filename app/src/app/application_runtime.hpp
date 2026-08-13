@@ -146,6 +146,7 @@ private:
   [[nodiscard]] bool StartRuntimeServices();
   void PrewarmAnimationRuns();
   [[nodiscard]] features::DiagnosticsSnapshot BuildDiagnosticsSnapshot() const;
+  bool RestartElevated();
 #ifdef _DEBUG
   bool RunStressTest();
   void UpdateStressTest();
@@ -235,6 +236,7 @@ private:
   std::atomic<bool> shutting_down_{false};
   std::atomic<bool> cleaned_up_{false};
   std::atomic<bool> update_handover_prepared_{false};
+  bool elevation_handover_pending_ = false;
   bool runtime_services_started_ = false;
 #ifdef _DEBUG
   features::StressTestReport stress_test_report_;

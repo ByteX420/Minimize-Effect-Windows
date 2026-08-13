@@ -29,7 +29,8 @@ void DiagnosticsPage::Render(::minimize::ui::SettingsWindow& window, components:
   const ULONGLONG now = GetTickCount64();
   auto& diagnostics = window.controller_->view_model().diagnostics;
 #ifdef _DEBUG
-  if (diagnostics.stress_test.active || diagnostics.effect.empty() || now - window.last_diagnostics_refresh_ms_ >= 200) {
+  if (diagnostics.stress_test.active || diagnostics.effect.empty() ||
+      now - window.last_diagnostics_refresh_ms_ >= 200) {
 #else
   if (diagnostics.effect.empty() || now - window.last_diagnostics_refresh_ms_ >= 500) {
 #endif
@@ -68,6 +69,7 @@ void DiagnosticsPage::Render(::minimize::ui::SettingsWindow& window, components:
   layout.SectionCaption(window.font_small_, kCaptionTextSize, "MACHINE");
   layout.BeginGroup();
   status_row("Windows", diagnostics.windows_version);
+  status_row("Privilege", diagnostics.privilege);
   status_row("GPU", diagnostics.graphics_adapter);
   status_row("Displays", diagnostics.monitor_configuration);
   status_row("Log folder", diagnostics.log_folder_size);
@@ -105,6 +107,25 @@ void DiagnosticsPage::Render(::minimize::ui::SettingsWindow& window, components:
       const bool succeeded = window.controller_->actions().ExecuteDiagnosticsAction(action);
       window.diagnostics_feedback_ = succeeded ? "Done" : "Failed";
       window.last_diagnostics_refresh_ms_ = 0;
+    }
+    layout.EndRow();
+  }
+  if (!diagnostics.elevated) {
+    layout.BeginRow(::minimize::ui::theme::Metrics::kRowHeightTall);
+    layout.ReserveControl(button_width);
+    layout.RowTitle(window.font_body_, kLabelTextSize, "Restart as administrator",
+                    kPrimaryTextColor);
+    layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                       "Animate elevated apps such as Task Manager", kSecondaryTextColor);
+    const ImVec2 cursor = layout.ControlCursor(button_width, button_height);
+    layout.SetCursor(cursor.x, cursor.y);
+    if (ui::components::CompactButton(motion, "##restart_elevated", "Restart",
+                                      ImVec2(button_width, button_height), window.font_body_, scale,
+                                      alpha)) {
+      const bool succeeded = window.controller_->actions().ExecuteDiagnosticsAction(
+          features::DiagnosticsAction::kRestartElevated);
+      window.diagnostics_feedback_ =
+          succeeded ? "Restarting..." : "Administrator restart cancelled";
     }
     layout.EndRow();
   }

@@ -31,6 +31,7 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
   minimize::core::CleanupDebugLogs();
   instance_ = instance;
   main_thread_id_ = GetCurrentThreadId();
+  elevation_handover_pending_ = options.IsElevationHandover();
 #ifdef _DEBUG
   device_recovery_test_pending_ = core::EnvironmentFlagEnabled("MINIMIZE_TEST_DEVICE_RECOVERY");
 #endif
@@ -89,12 +90,14 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
   if (!options.IsUpdateHandover()) {
     settings_window_.RestoreUiState(settings_service_.Get().ui_window);
   }
-  if (!options.IsUpdateHandover() && !StartRuntimeServices()) return false;
+  if (!options.IsHandover() && !StartRuntimeServices()) return false;
 
   // During a handover the replacement process paints this window first and starts hooks only
   // after the old process has acknowledged the frame and exited.
-  settings_window_.Show(options.force_show_settings || !settings_service_.Get().start_minimized ||
-                        settings_service_.Get().close_behavior != "tray");
+  if (!options.IsElevationHandover()) {
+    settings_window_.Show(options.force_show_settings || !settings_service_.Get().start_minimized ||
+                          settings_service_.Get().close_behavior != "tray");
+  }
 
   std::wcout << L"Minimize minimize monitor is running.\n";
   minimize::core::LogTrace(L"App", L"ApplicationRuntime::Initialize completed");
@@ -168,7 +171,12 @@ bool ApplicationRuntime::CompleteUpdateHandover() {
     minimize::core::LogDebug(L"Update", L"Could not start runtime services after handover");
     return false;
   }
-  settings_window_.CompleteUpdateHandover();
+  if (elevation_handover_pending_) {
+    elevation_handover_pending_ = false;
+    settings_window_.Show(true);
+  } else {
+    settings_window_.CompleteUpdateHandover();
+  }
   update_handover_prepared_.store(false, std::memory_order_release);
   frame_scheduler_.Wake();
   return true;

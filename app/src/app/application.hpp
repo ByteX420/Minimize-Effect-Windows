@@ -14,6 +14,7 @@ struct ApplicationLaunchOptions {
   std::optional<RECT> initial_window_bounds;
   DWORD update_parent_process_id = 0;
   std::wstring update_ready_event_name;
+  DWORD elevation_parent_process_id = 0;
   int initial_page = 0;
   float initial_page_scroll = 0.0f;
   bool initial_maximized = false;
@@ -21,6 +22,8 @@ struct ApplicationLaunchOptions {
   [[nodiscard]] bool IsUpdateHandover() const {
     return update_parent_process_id != 0 && !update_ready_event_name.empty();
   }
+  [[nodiscard]] bool IsElevationHandover() const { return elevation_parent_process_id != 0; }
+  [[nodiscard]] bool IsHandover() const { return IsUpdateHandover() || IsElevationHandover(); }
 };
 
 class Application final {

@@ -10,6 +10,7 @@
 #include <format>
 #include <iostream>
 #include <psapi.h>
+#include <shellapi.h>
 #include <string_view>
 
 #include "app/application_runtime.hpp"
@@ -475,6 +476,7 @@ features::DiagnosticsSnapshot ApplicationRuntime::BuildDiagnosticsSnapshot() con
       .d3d_device = d3d_device_.get(),
       .active_animations = active_animations,
       .startup_repair = startup_repair_status_,
+      .elevated = platform::IsCurrentProcessElevated(),
       .reference_window = effect_controller_.last_foreground_window(),
       .taskbar_targets = &taskbar_target_provider_,
   });
@@ -482,6 +484,33 @@ features::DiagnosticsSnapshot ApplicationRuntime::BuildDiagnosticsSnapshot() con
   snapshot.stress_test = stress_test_report_;
 #endif
   return snapshot;
+}
+
+bool ApplicationRuntime::RestartElevated() {
+  if (platform::IsCurrentProcessElevated()) return true;
+  settings_window_.Show(false);
+  std::wstring executable(MAX_PATH, L'\0');
+  DWORD length =
+      GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+  while (length == executable.size()) {
+    executable.resize(executable.size() * 2);
+    length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
+  }
+  if (length == 0) {
+    settings_window_.Show(true);
+    return false;
+  }
+  executable.resize(length);
+  const std::wstring parameters = L"--elevated-resume " + std::to_wstring(GetCurrentProcessId());
+  const INT_PTR result = reinterpret_cast<INT_PTR>(
+      ShellExecuteW(settings_window_.hwnd(), L"runas", executable.c_str(), parameters.c_str(),
+                    platform::ExecutableDirectory().c_str(), SW_SHOWNORMAL));
+  if (result <= 32) {
+    settings_window_.Show(true);
+    return false;
+  }
+  RequestShutdown();
+  return true;
 }
 
 features::DiagnosticsSnapshot ApplicationRuntime::GetDiagnostics() const {
@@ -503,6 +532,7 @@ bool ApplicationRuntime::ExecuteDiagnosticsAction(features::DiagnosticsAction ac
                         BeginAnimationRendererRecovery();
                         return !renderer_recovery_.pending() && d3d_device_ != nullptr;
                       },
+                  .restart_elevated = [this] { return RestartElevated(); },
 #ifdef _DEBUG
                   .run_stress_test = [this] { return RunStressTest(); },
 #endif
