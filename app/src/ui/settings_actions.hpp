@@ -78,6 +78,7 @@ public:
   virtual SettingsFileOperationResult ImportSettings() = 0;
   virtual bool SaveUiWindowState(const settings::UiWindowState& state) = 0;
   virtual void SetTemporaryPause(TemporaryPauseAction action) = 0;
+  virtual void PauseForMinutes(unsigned int minutes) = 0;
   virtual HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                        settings::HotkeyBinding binding) = 0;
   virtual void ExecuteHotkeyAction(settings::HotkeyAction action) = 0;

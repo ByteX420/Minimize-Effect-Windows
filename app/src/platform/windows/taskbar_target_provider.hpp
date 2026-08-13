@@ -25,7 +25,6 @@ public:
   [[nodiscard]] TaskbarTarget GetTargetForWindow(HWND window, const RECT& window_rect) const;
 
 private:
-  [[nodiscard]] bool TryGetEnvironmentTarget(RECT* target_rect) const;
   [[nodiscard]] RECT GetShellTaskbarRect() const;
 
   std::size_t auto_hide_reveal_count_ = 0;

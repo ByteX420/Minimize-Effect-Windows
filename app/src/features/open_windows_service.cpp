@@ -101,8 +101,10 @@ OpenWindowsSnapshot OpenWindowsService::Capture(HWND overlay_window, HWND settin
   }
 
   HWND foreground = GetForegroundWindow();
-  if (foreground == settings_window && last_active_window != nullptr &&
-      IsWindow(last_active_window)) {
+  const bool foreground_is_application =
+      foreground != nullptr && platform::IsInterestingTopLevelWindow(foreground, overlay_window);
+  if ((foreground == settings_window || !foreground_is_application) &&
+      last_active_window != nullptr && IsWindow(last_active_window)) {
     foreground = last_active_window;
   }
   for (HWND window : platform::EnumerateTopLevelWindows(overlay_window)) {

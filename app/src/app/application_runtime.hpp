@@ -95,6 +95,7 @@ public:
   ui::SettingsFileOperationResult ImportSettings() override;
   bool SaveUiWindowState(const settings::UiWindowState& state) override;
   void SetTemporaryPause(ui::TemporaryPauseAction action) override;
+  void PauseForMinutes(unsigned int minutes) override;
   ui::HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                    settings::HotkeyBinding binding) override;
   void ExecuteHotkeyAction(settings::HotkeyAction action) override;

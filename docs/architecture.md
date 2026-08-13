@@ -103,6 +103,3 @@ routing. Process elevation queries use `wil::get_token_information`. Registry st
 entries are safely managed via `wil::unique_hkey` and `wil::reg`. Log output is formatted via C++20 `std::format`
 and dispatched via `spdlog`. `main.cpp` only coordinates these program-entry concerns.
 
-`MINIMIZE_TASKBAR_RECT=left,top,right,bottom` overrides shell target discovery in
-physical screen coordinates. Parsing and target selection remain isolated in
-the taskbar provider.

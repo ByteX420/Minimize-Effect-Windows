@@ -1,5 +1,6 @@
 #include "pch.hpp"
 
+#include "settings/exclusion_rules.hpp"
 #include "ui/hotkey_presenter.hpp"
 #include "ui/settings_window.hpp"
 #include "ui/theme/theme.hpp"
@@ -27,33 +28,67 @@ bool IsTitlebarDragRegion(HWND window, POINT point, float scale) {
 void SettingsWindow::HandleTrayCommand(ui::TrayCommand command) {
   if (controller_ == nullptr) return;
 
-  switch (command) {
-    case ui::TrayCommand::kShowSettings:
+  switch (command.kind) {
+    case ui::TrayCommandKind::kShowSettings:
       Show(true);
       break;
-    case ui::TrayCommand::kToggleEnabled:
+    case ui::TrayCommandKind::kToggleEnabled:
       controller_->actions().SetEnabled(!controller_->view_model().enabled);
       break;
-    case ui::TrayCommand::kResume:
+    case ui::TrayCommandKind::kResume:
       controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kResume);
       break;
-    case ui::TrayCommand::kPauseTenMinutes:
-      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kTenMinutes);
+    case ui::TrayCommandKind::kPauseForMinutes:
+      controller_->actions().PauseForMinutes(command.pause_minutes);
       break;
-    case ui::TrayCommand::kPauseOneHour:
-      controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kOneHour);
-      break;
-    case ui::TrayCommand::kPauseUntilRestart:
+    case ui::TrayCommandKind::kPauseUntilRestart:
       controller_->actions().SetTemporaryPause(ui::TemporaryPauseAction::kUntilRestart);
       break;
-    case ui::TrayCommand::kRepairWindows:
+    case ui::TrayCommandKind::kPreview:
+      if (!animation_preview_.active()) animation_preview_.Start(hwnd_);
+      break;
+    case ui::TrayCommandKind::kApplyProfile:
+      if (!command.profile_name.empty()) {
+        controller_->actions().ApplyMotionProfile(command.profile_name);
+      }
+      break;
+    case ui::TrayCommandKind::kToggleCurrentApplication:
+      if (!controller_->view_model().tray_current_application.empty()) {
+        controller_->actions().SetApplicationExcluded(
+            controller_->view_model().tray_current_application,
+            !controller_->view_model().tray_current_application_excluded);
+      }
+      break;
+    case ui::TrayCommandKind::kRepairWindows:
       controller_->actions().HealWindows();
       break;
-    case ui::TrayCommand::kExit:
+    case ui::TrayCommandKind::kExit:
       controller_->actions().RequestExit();
       break;
-    case ui::TrayCommand::kNone:
+    case ui::TrayCommandKind::kNone:
       break;
+  }
+}
+
+void SettingsWindow::PrepareTrayContext() {
+  if (controller_ == nullptr) return;
+  auto& model = controller_->view_model();
+  model.diagnostics = controller_->actions().GetDiagnostics();
+  model.tray_current_application.clear();
+  model.tray_current_application_excluded = false;
+  const features::OpenWindowsSnapshot snapshot = controller_->actions().GetOpenWindowsSnapshot();
+  const features::OpenWindowInfo* current = nullptr;
+  for (const features::OpenWindowInfo& info : snapshot.windows) {
+    if (info.foreground && !info.executable_name.empty()) {
+      current = &info;
+      break;
+    }
+    if (current == nullptr && !info.minimized && !info.executable_name.empty()) current = &info;
+  }
+  if (current != nullptr) {
+    model.tray_current_application = current->executable_name;
+    model.tray_current_application_excluded = settings::ContainsExcludedApplication(
+        model.excluded_applications, current->executable_name);
   }
 }
 
@@ -172,6 +207,7 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
   }
 
   if (message == ui::TrayIcon::kCallbackMessage && settings != nullptr) {
+    if (l_param == WM_RBUTTONUP) settings->PrepareTrayContext();
     const ui::TrayCommand command =
         settings->tray_icon_.HandleCallback(hwnd, l_param, settings->controller_->view_model());
     settings->HandleTrayCommand(command);

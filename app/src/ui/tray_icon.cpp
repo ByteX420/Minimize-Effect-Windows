@@ -3,6 +3,7 @@
 #include "ui/tray_icon.hpp"
 
 #include <shellapi.h>
+#include <string>
 
 #include "core/logger.hpp"
 #include "ui/settings_view_model.hpp"
@@ -19,6 +20,23 @@ constexpr UINT kPauseTenMinutes = 3004;
 constexpr UINT kPauseOneHour = 3005;
 constexpr UINT kPauseUntilRestart = 3006;
 constexpr UINT kResume = 3007;
+constexpr UINT kPreview = 3008;
+constexpr UINT kToggleCurrentApplication = 3009;
+constexpr UINT kPauseFiveMinutes = 3010;
+constexpr UINT kPauseThirtyMinutes = 3011;
+constexpr UINT kPauseTwoHours = 3012;
+constexpr UINT kProfileBase = 3100;
+
+std::wstring Utf8ToWide(std::string_view value) {
+  if (value.empty()) return {};
+  const int size =
+      MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), nullptr, 0);
+  if (size <= 0) return {};
+  std::wstring result(static_cast<std::size_t>(size), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(),
+                      size);
+  return result;
+}
 
 }  // namespace
 
@@ -106,11 +124,11 @@ TrayCommand TrayIcon::HandleCallback(HWND owner, LPARAM parameter,
                                      const SettingsViewModel& view_model) const {
   if (parameter == WM_LBUTTONUP || parameter == WM_LBUTTONDBLCLK ||
       parameter == NIN_BALLOONUSERCLICK) {
-    return TrayCommand::kShowSettings;
+    return TrayCommand{.kind = TrayCommandKind::kShowSettings};
   }
-  if (parameter != WM_RBUTTONUP) return TrayCommand::kNone;
+  if (parameter != WM_RBUTTONUP) return {};
   HMENU menu = CreatePopupMenu();
-  if (menu == nullptr) return TrayCommand::kNone;
+  if (menu == nullptr) return {};
   AppendMenuW(menu, MF_STRING | (view_model.enabled ? MF_CHECKED : MF_UNCHECKED), kToggleEnabled,
               L"Minimize Effect Enabled");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -118,9 +136,39 @@ TrayCommand TrayIcon::HandleCallback(HWND owner, LPARAM parameter,
     AppendMenuW(menu, MF_STRING, kResume, L"Resume Minimize Effect");
   } else {
     const UINT pause_flags = view_model.enabled ? MF_STRING : MF_STRING | MF_GRAYED;
-    AppendMenuW(menu, pause_flags, kPauseTenMinutes, L"Pause for 10 minutes");
-    AppendMenuW(menu, pause_flags, kPauseOneHour, L"Pause for 1 hour");
-    AppendMenuW(menu, pause_flags, kPauseUntilRestart, L"Pause until next restart");
+    HMENU pause_menu = CreatePopupMenu();
+    if (pause_menu != nullptr) {
+      AppendMenuW(pause_menu, pause_flags, kPauseFiveMinutes, L"5 minutes");
+      AppendMenuW(pause_menu, pause_flags, kPauseTenMinutes, L"10 minutes");
+      AppendMenuW(pause_menu, pause_flags, kPauseThirtyMinutes, L"30 minutes");
+      AppendMenuW(pause_menu, pause_flags, kPauseOneHour, L"1 hour");
+      AppendMenuW(pause_menu, pause_flags, kPauseTwoHours, L"2 hours");
+      AppendMenuW(pause_menu, pause_flags, kPauseUntilRestart, L"Until next restart");
+      AppendMenuW(menu, MF_POPUP | pause_flags, reinterpret_cast<UINT_PTR>(pause_menu),
+                  L"Pause for");
+    }
+  }
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kPreview, L"Preview animation");
+
+  if (!view_model.motion_profiles.empty()) {
+    HMENU profiles = CreatePopupMenu();
+    if (profiles != nullptr) {
+      for (std::size_t index = 0; index < view_model.motion_profiles.size(); ++index) {
+        const std::wstring name = Utf8ToWide(view_model.motion_profiles[index].name);
+        AppendMenuW(profiles, MF_STRING, kProfileBase + static_cast<UINT>(index), name.c_str());
+      }
+      AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles), L"Motion profile");
+    }
+  }
+
+  if (!view_model.tray_current_application.empty()) {
+    const std::wstring executable = Utf8ToWide(view_model.tray_current_application);
+    const std::wstring label =
+        (view_model.tray_current_application_excluded ? L"Enable effect for "
+                                                      : L"Disable effect for ") +
+        executable;
+    AppendMenuW(menu, MF_STRING, kToggleCurrentApplication, label.c_str());
   }
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kShowSettings, L"Settings");
@@ -133,25 +181,42 @@ TrayCommand TrayIcon::HandleCallback(HWND owner, LPARAM parameter,
   const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
                                        cursor.x, cursor.y, 0, owner, nullptr);
   DestroyMenu(menu);
+  if (selected >= kProfileBase &&
+      selected < kProfileBase + static_cast<UINT>(view_model.motion_profiles.size())) {
+    return TrayCommand{
+        .kind = TrayCommandKind::kApplyProfile,
+        .profile_name = view_model.motion_profiles[selected - kProfileBase].name,
+    };
+  }
   switch (selected) {
     case kToggleEnabled:
-      return TrayCommand::kToggleEnabled;
+      return TrayCommand{.kind = TrayCommandKind::kToggleEnabled};
     case kShowSettings:
-      return TrayCommand::kShowSettings;
+      return TrayCommand{.kind = TrayCommandKind::kShowSettings};
     case kRepairWindows:
-      return TrayCommand::kRepairWindows;
+      return TrayCommand{.kind = TrayCommandKind::kRepairWindows};
     case kExit:
-      return TrayCommand::kExit;
+      return TrayCommand{.kind = TrayCommandKind::kExit};
+    case kPauseFiveMinutes:
+      return TrayCommand{.kind = TrayCommandKind::kPauseForMinutes, .pause_minutes = 5};
     case kPauseTenMinutes:
-      return TrayCommand::kPauseTenMinutes;
+      return TrayCommand{.kind = TrayCommandKind::kPauseForMinutes, .pause_minutes = 10};
+    case kPauseThirtyMinutes:
+      return TrayCommand{.kind = TrayCommandKind::kPauseForMinutes, .pause_minutes = 30};
     case kPauseOneHour:
-      return TrayCommand::kPauseOneHour;
+      return TrayCommand{.kind = TrayCommandKind::kPauseForMinutes, .pause_minutes = 60};
+    case kPauseTwoHours:
+      return TrayCommand{.kind = TrayCommandKind::kPauseForMinutes, .pause_minutes = 120};
     case kPauseUntilRestart:
-      return TrayCommand::kPauseUntilRestart;
+      return TrayCommand{.kind = TrayCommandKind::kPauseUntilRestart};
     case kResume:
-      return TrayCommand::kResume;
+      return TrayCommand{.kind = TrayCommandKind::kResume};
+    case kPreview:
+      return TrayCommand{.kind = TrayCommandKind::kPreview};
+    case kToggleCurrentApplication:
+      return TrayCommand{.kind = TrayCommandKind::kToggleCurrentApplication};
     default:
-      return TrayCommand::kNone;
+      return {};
   }
 }
 

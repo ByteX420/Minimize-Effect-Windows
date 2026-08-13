@@ -35,6 +35,20 @@ int SelectedIndex(const Names& names, const std::string& value) {
   return 0;
 }
 
+std::string TrimProfileName(std::string value) {
+  const std::size_t first = value.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  const std::size_t last = value.find_last_not_of(" \t\r\n");
+  return value.substr(first, last - first + 1);
+}
+
+int FindProfileIndex(const std::vector<settings::MotionProfile>& profiles, std::string_view name) {
+  for (std::size_t index = 0; index < profiles.size(); ++index) {
+    if (profiles[index].name == name) return static_cast<int>(index);
+  }
+  return -1;
+}
+
 }  // namespace
 
 void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::PageLayout& layout,
@@ -158,17 +172,9 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
                     ImVec2(profile_button_width, button_height), window.font_body_, scale, alpha)) {
     const bool saved = actions.SaveMotionProfile(window.motion_profile_name_.data());
     if (saved) {
-      std::string requested_name = window.motion_profile_name_.data();
-      const std::size_t first = requested_name.find_first_not_of(" \t\r\n");
-      const std::size_t last = requested_name.find_last_not_of(" \t\r\n");
-      if (first != std::string::npos)
-        requested_name = requested_name.substr(first, last - first + 1);
-      for (std::size_t index = 0; index < model.motion_profiles.size(); ++index) {
-        if (model.motion_profiles[index].name == requested_name) {
-          window.selected_motion_profile_ = static_cast<int>(index);
-          break;
-        }
-      }
+      const int index = FindProfileIndex(model.motion_profiles,
+                                         TrimProfileName(window.motion_profile_name_.data()));
+      if (index >= 0) window.selected_motion_profile_ = index;
     }
     window.RecordSaveResult(saved);
   }

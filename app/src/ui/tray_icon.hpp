@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <string>
 #include <string_view>
 #include <windows.h>
 
@@ -7,16 +8,24 @@ namespace minimize::ui {
 
 class SettingsViewModel;
 
-enum class TrayCommand {
+enum class TrayCommandKind {
   kNone,
   kShowSettings,
   kToggleEnabled,
   kResume,
-  kPauseTenMinutes,
-  kPauseOneHour,
+  kPauseForMinutes,
   kPauseUntilRestart,
+  kPreview,
+  kApplyProfile,
+  kToggleCurrentApplication,
   kRepairWindows,
   kExit,
+};
+
+struct TrayCommand {
+  TrayCommandKind kind = TrayCommandKind::kNone;
+  unsigned int pause_minutes = 0;
+  std::string profile_name;
 };
 
 class TrayIcon final {

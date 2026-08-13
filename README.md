@@ -27,7 +27,7 @@ It is a native **C++ / Direct3D 11 / DirectComposition** project with a polished
 - **Easing & style options** — presets, custom cubic-bezier, classic / curvy / squash, strength, fade
 - **Automatic quality** — adaptive mesh density under load and resolution pressure (8-bit R8 mask textures save 75% VRAM)
 - **App exclusions** — skip the effect for specific executables
-- **System integration** — run at startup, start minimized, tray icon, close-to-tray or exit (managed with Microsoft WIL)
+- **System integration** — run at startup, start minimized, close-to-tray or exit, plus tray shortcuts for pause duration, profiles, preview, and current-app exclusion (managed with Microsoft WIL)
 - **Hotkeys** — toggle the effect, open settings, repair windows (configurable)
 - **Settings UI** — dark macOS-inspired shell (traffic lights, sidebar, cards, motion)
 - **Safe settings recovery** — one-step undo/redo plus an automatically maintained backup
@@ -157,18 +157,10 @@ Settings persist to:
 
 | Variable | Purpose |
 | --- | --- |
-| `MINIMIZE_TASKBAR_RECT` | Override minimize target as `left,top,right,bottom` (physical screen coords). Useful for custom taskbars. |
 | `MINIMIZE_DEBUG_LOG` | Override path of the debug log file |
 | `MINIMIZE_TRACE=1` | Verbose timing traces (noisy; for debugging) |
 | `MINIMIZE_LOG_SYNC=1` | Flush every log line (helps after hangs/crashes) |
 | `MINIMIZE_TEST_DEVICE_RECOVERY=1` | Debug: one controlled D3D teardown/recreate after startup |
-
-Example custom taskbar target:
-
-```powershell
-$env:MINIMIZE_TASKBAR_RECT = "100,980,1820,1070"
-.\MinimizeEffect.exe
-```
 
 ### Debug log
 
@@ -252,7 +244,7 @@ main -> app -> features / runtime / ui -> rendering / platform / settings -> cor
 
 - No official “pre-DWM replace animation” API — behavior can vary with shell updates.
 - **UIPI:** non-elevated Minimize Effect cannot hook elevated windows.
-- Multi-monitor / exotic taskbar setups may need `MINIMIZE_TASKBAR_RECT`.
+- Taskbar targets are detected automatically from the active window and its display.
 - Fullscreen games / exclusive modes may disable or skip the effect (settings flags exist for battery saver / fullscreen-related behavior).
 
 See [`docs/architecture.md`](docs/architecture.md) for ownership, state machine, and recovery paths.
@@ -378,7 +370,7 @@ Please include:
 | --- | --- |
 | No animation at all | Confirm effect is **On** in settings; check Repair page (Hook / Renderer / D3D). |
 | Elevated apps ignore effect | Run Minimize Effect **as Administrator**. |
-| Wrong suck target | Set `MINIMIZE_TASKBAR_RECT` or check taskbar edge (top/bottom/left/right). |
+| Wrong suck target | Check the detected taskbar edge (top/bottom/left/right) and taskbar state. |
 | Black / stuck overlay | Restart app; check device-lost path; update GPU drivers. |
 | Hook not installed | Ensure `MinimizeEffectHook.dll` sits next to the EXE; rebuild both projects. |
 | Settings not saving | Check write access to `%LOCALAPPDATA%\MinimizeEffect\`. |

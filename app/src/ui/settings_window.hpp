@@ -100,6 +100,7 @@ private:
 
   static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_param);
   void HandleTrayCommand(ui::TrayCommand command);
+  void PrepareTrayContext();
   bool CreateRenderWindow(HINSTANCE instance);
   void ApplyWindowShape(int width, int height);
   void UpdateDpi(UINT dpi);

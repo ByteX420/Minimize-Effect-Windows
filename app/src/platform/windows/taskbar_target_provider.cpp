@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cwchar>
 #include <cwctype>
 #include <format>
 #include <oleauto.h>
@@ -553,7 +552,6 @@ void TaskbarTargetProvider::RestoreAutoHideTaskbar() {
 TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
                                                         const RECT& window_rect) const {
   RECT taskbar_rect{};
-  const bool has_env = TryGetEnvironmentTarget(&taskbar_rect);
 
   HMONITOR monitor = MonitorFromRect(&window_rect, MONITOR_DEFAULTTONEAREST);
   MONITORINFO monitor_info{};
@@ -565,12 +563,10 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
   }
 
   RECT matched_rect{};
-  bool has_matched_button = false;
-  if (!has_env) {
-    has_matched_button = FindTaskbarIconUIAutomation(window, window_rect, &matched_rect);
-  }
+  const bool has_matched_button =
+      FindTaskbarIconUIAutomation(window, window_rect, &matched_rect);
 
-  if (!has_env && !has_matched_button) {
+  if (!has_matched_button) {
     HWND taskbar_hwnd = FindTaskbarWindowForRect(window_rect);
     if (taskbar_hwnd == nullptr || !GetWindowRect(taskbar_hwnd, &taskbar_rect)) {
       taskbar_rect = EstimateTaskbarRect(monitor_info);
@@ -643,26 +639,6 @@ TaskbarTarget TaskbarTargetProvider::GetTargetForWindow(HWND window,
       .rect = target,
       .edge = edge,
   };
-}
-
-bool TaskbarTargetProvider::TryGetEnvironmentTarget(RECT* target_rect) const {
-  wchar_t value[128]{};
-  const DWORD length = GetEnvironmentVariableW(L"MINIMIZE_TASKBAR_RECT", value,
-                                               static_cast<DWORD>(std::size(value)));
-  if (length == 0 || length >= std::size(value)) {
-    return false;
-  }
-
-  RECT parsed{};
-  if (swscanf_s(value, L"%ld,%ld,%ld,%ld", &parsed.left, &parsed.top, &parsed.right,
-                &parsed.bottom) != 4) {
-    return false;
-  }
-  if (parsed.right <= parsed.left || parsed.bottom <= parsed.top) {
-    return false;
-  }
-  *target_rect = parsed;
-  return true;
 }
 
 RECT TaskbarTargetProvider::GetShellTaskbarRect() const {

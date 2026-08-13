@@ -80,6 +80,13 @@ void ApplicationRuntime::SetTemporaryPause(ui::TemporaryPauseAction action) {
   settings_window_.UpdatePauseState(IsTemporarilyPaused(), pause_controller_.until_restart());
 }
 
+void ApplicationRuntime::PauseForMinutes(unsigned int minutes) {
+  const std::uint64_t bounded_minutes = std::clamp<std::uint64_t>(minutes, 1, 24 * 60);
+  pause_controller_.PauseFor(bounded_minutes * 60ULL * 1000ULL, GetTickCount64());
+  RefreshEffectRuntimeState();
+  settings_window_.UpdatePauseState(true, false);
+}
+
 void ApplicationRuntime::UnregisterAllHotkeys() { hotkey_controller_.UnregisterAll(); }
 
 void ApplicationRuntime::RegisterConfiguredHotkeys() {

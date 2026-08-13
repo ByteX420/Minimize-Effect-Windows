@@ -45,6 +45,8 @@ public:
   bool start_minimized = false;
   std::vector<std::string> excluded_applications;
   std::vector<settings::MotionProfile> motion_profiles;
+  std::string tray_current_application;
+  bool tray_current_application_excluded = false;
 };
 
 }  // namespace minimize::ui

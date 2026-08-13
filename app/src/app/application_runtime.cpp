@@ -101,8 +101,6 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
 
   std::wcout << L"Minimize minimize monitor is running.\n";
   minimize::core::LogTrace(L"App", L"ApplicationRuntime::Initialize completed");
-  std::wcout << L"Set MINIMIZE_TASKBAR_RECT=left,top,right,bottom to aim at a "
-                L"custom taskbar rectangle.\n";
   std::wcout << L"Close this console window to stop Minimize Effect and restore any active "
                 L"window overrides.\n";
   return true;
