@@ -6,6 +6,7 @@
 #include "animation/easing.hpp"
 #include "features/diagnostics_service.hpp"
 #include "features/open_windows_service.hpp"
+#include "settings/app_settings.hpp"
 #include "settings/hotkey_binding.hpp"
 
 namespace minimize::ui {
@@ -69,6 +70,7 @@ public:
   virtual bool FocusOpenWindow(HWND window) = 0;
   virtual SettingsFileOperationResult ExportSettings() = 0;
   virtual SettingsFileOperationResult ImportSettings() = 0;
+  virtual bool SaveUiWindowState(const settings::UiWindowState& state) = 0;
   virtual void SetTemporaryPause(TemporaryPauseAction action) = 0;
   virtual HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                        settings::HotkeyBinding binding) = 0;

@@ -1334,4 +1334,8 @@ ui::SettingsFileOperationResult ApplicationRuntime::ImportSettings() {
   };
 }
 
+bool ApplicationRuntime::SaveUiWindowState(const settings::UiWindowState& state) {
+  return settings_mutations_.SaveUiWindowState(state);
+}
+
 }  // namespace minimize::app

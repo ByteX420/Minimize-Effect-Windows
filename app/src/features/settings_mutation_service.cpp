@@ -9,9 +9,9 @@
 #include <string_view>
 
 #include "core/logger.hpp"
-#include "settings/settings_repository.hpp"
 #include "platform/windows/startup_manager.hpp"
 #include "settings/exclusion_rules.hpp"
+#include "settings/settings_repository.hpp"
 #include "settings/settings_serializer.hpp"
 #include "settings/settings_validator.hpp"
 
@@ -207,8 +207,9 @@ bool SettingsMutationService::SetStartupOptions(bool run_at_startup, bool start_
   return true;
 }
 
-bool SettingsMutationService::SetDisplayMinimizeExcluded(const std::string& device_name, bool excluded,
-                                                      const std::function<void()>& applied) {
+bool SettingsMutationService::SetDisplayMinimizeExcluded(const std::string& device_name,
+                                                         bool excluded,
+                                                         const std::function<void()>& applied) {
   if (device_name.empty()) return false;
   auto proposed = settings_.Get();
   auto& displays = proposed.excluded_displays;
@@ -306,6 +307,12 @@ bool SettingsMutationService::ExportSettingsToFile(const std::wstring& path) con
       settings::SettingsValidator::Normalize(settings_.Get()));
   output.flush();
   return static_cast<bool>(output);
+}
+
+bool SettingsMutationService::SaveUiWindowState(const settings::UiWindowState& state) {
+  auto proposed = settings_.Get();
+  proposed.ui_window = state;
+  return settings_.Update(std::move(proposed));
 }
 
 }  // namespace minimize::features

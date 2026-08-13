@@ -13,6 +13,19 @@ inline constexpr float kDefaultMinimizeDuration = 0.70f;
 inline constexpr float kDefaultRestoreDuration = 0.70f;
 inline constexpr float kDefaultCancelDuration = 0.35f;
 
+struct UiWindowState {
+  int left = 0;
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  bool maximized = false;
+  int selected_page = 0;
+  float page_scroll = 0.0f;
+
+  [[nodiscard]] bool HasPlacement() const { return right > left && bottom > top; }
+  bool operator==(const UiWindowState&) const = default;
+};
+
 struct AppSettings {
   bool enabled = true;
   float minimize_duration = kDefaultMinimizeDuration;
@@ -39,6 +52,7 @@ struct AppSettings {
   std::vector<std::string> excluded_applications;
   // Persisted GDI device names (MONITORINFOEX.szDevice), e.g. "\\\\.\\DISPLAY1".
   std::vector<std::string> excluded_displays;
+  UiWindowState ui_window;
   std::array<HotkeyBinding, static_cast<std::size_t>(HotkeyAction::kCount)> hotkeys = {
       HotkeyBinding{.modifiers = 0x0001u | 0x0002u, .virtual_key = 'G'},
       HotkeyBinding{},

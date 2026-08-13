@@ -34,12 +34,13 @@ public:
   bool SetApplicationExcluded(const std::string& executable, bool excluded,
                               const std::function<void()>& applied);
   bool SetDisplayMinimizeExcluded(const std::string& device_name, bool excluded,
-                               const std::function<void()>& applied);
+                                  const std::function<void()>& applied);
   // applied runs after a successful settings write. When startup registration fails,
   // applied still runs but out_startup_registration_failed is set so the host can warn.
   bool ImportSettingsFromFile(const std::wstring& path, const std::function<void()>& applied,
                               bool* out_startup_registration_failed = nullptr);
   bool ExportSettingsToFile(const std::wstring& path) const;
+  bool SaveUiWindowState(const settings::UiWindowState& state);
 
 private:
   settings::SettingsService& settings_;

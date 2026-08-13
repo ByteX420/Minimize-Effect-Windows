@@ -97,6 +97,7 @@ void SettingsWindow::CompleteUpdateHandover() {
 }
 
 void SettingsWindow::Shutdown() {
+  PersistUiState();
   update_service_.Stop();
   FlushPendingSpeedSave();
   animation_preview_.Close();
@@ -119,23 +120,27 @@ void SettingsWindow::Show(bool show) {
     if (IsIconic(hwnd_)) {
       ShowWindow(hwnd_, SW_RESTORE);
     }
-    POINT cursor_pos{};
-    GetCursorPos(&cursor_pos);
-    HMONITOR monitor = MonitorFromPoint(cursor_pos, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO info{};
-    info.cbSize = sizeof(info);
-    if (GetMonitorInfoW(monitor, &info)) {
-      RECT rect{};
-      GetWindowRect(hwnd_, &rect);
-      const int w = rect.right - rect.left;
-      const int h = rect.bottom - rect.top;
-      const int x = info.rcWork.left + (info.rcWork.right - info.rcWork.left - w) / 2;
-      const int y = info.rcWork.top + (info.rcWork.bottom - info.rcWork.top - h) / 2;
-      SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    if (!position_initialized_) {
+      POINT cursor_pos{};
+      GetCursorPos(&cursor_pos);
+      HMONITOR monitor = MonitorFromPoint(cursor_pos, MONITOR_DEFAULTTONEAREST);
+      MONITORINFO info{};
+      info.cbSize = sizeof(info);
+      if (GetMonitorInfoW(monitor, &info)) {
+        RECT rect{};
+        GetWindowRect(hwnd_, &rect);
+        const int w = rect.right - rect.left;
+        const int h = rect.bottom - rect.top;
+        const int x = info.rcWork.left + (info.rcWork.right - info.rcWork.left - w) / 2;
+        const int y = info.rcWork.top + (info.rcWork.bottom - info.rcWork.top - h) / 2;
+        SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+      }
+      position_initialized_ = true;
     }
     ShowWindow(hwnd_, SW_SHOW);
     tray_icon_.Remove(hwnd_);
   } else {
+    PersistUiState();
     ShowWindow(hwnd_, SW_HIDE);
     if (!tray_icon_.Add(hwnd_, controller_->view_model())) {
       // Never leave the settings inaccessible if Explorer rejects the icon.
@@ -156,28 +161,74 @@ void SettingsWindow::Show(bool show) {
   Render();
 }
 
+void SettingsWindow::SetInitialBounds(const RECT& bounds) {
+  initial_bounds_ = bounds;
+  if (hwnd_ == nullptr || bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
+  SetWindowPos(hwnd_, nullptr, bounds.left, bounds.top, bounds.right - bounds.left,
+               bounds.bottom - bounds.top, SWP_NOZORDER | SWP_NOACTIVATE);
+  position_initialized_ = true;
+}
+
+void SettingsWindow::RestoreUiState(const settings::UiWindowState& state) {
+  selected_page_ = static_cast<Page>(std::clamp(state.selected_page, 0, 7));
+  initial_page_scroll_ = std::max(0.0f, state.page_scroll);
+  if (!state.HasPlacement() || hwnd_ == nullptr) return;
+
+  const RECT bounds{state.left, state.top, state.right, state.bottom};
+  const HMONITOR monitor = MonitorFromRect(&bounds, MONITOR_DEFAULTTONULL);
+  if (monitor == nullptr) return;
+
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  placement.showCmd = state.maximized ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+  placement.rcNormalPosition = bounds;
+  if (SetWindowPlacement(hwnd_, &placement)) position_initialized_ = true;
+}
+
+void SettingsWindow::PersistUiState() {
+  if (hwnd_ == nullptr || controller_ == nullptr || !position_initialized_) return;
+  WINDOWPLACEMENT placement{};
+  placement.length = sizeof(placement);
+  if (!GetWindowPlacement(hwnd_, &placement)) return;
+  const RECT& bounds = placement.rcNormalPosition;
+  if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) return;
+  settings::UiWindowState state{
+      .left = bounds.left,
+      .top = bounds.top,
+      .right = bounds.right,
+      .bottom = bounds.bottom,
+      .maximized = placement.showCmd == SW_SHOWMAXIMIZED,
+      .selected_page = std::min(static_cast<int>(selected_page_), 7),
+      .page_scroll = std::max(0.0f, current_page_scroll_),
+  };
+  if (!controller_->actions().SaveUiWindowState(state)) {
+    core::LogDebug(L"Settings", L"Could not persist settings window state");
+  }
+}
+
 void SettingsWindow::UpdateState(const minimize::settings::AppSettings& settings) {
   const bool enabled_changed = controller_->view_model().enabled != settings.enabled;
   const bool changed =
       enabled_changed ||
       std::abs(controller_->view_model().minimize_duration - settings.minimize_duration) >
           0.0001f ||
-       std::abs(controller_->view_model().restore_duration - settings.restore_duration) > 0.0001f ||
-       std::abs(controller_->view_model().cancel_duration - settings.cancel_duration) > 0.0001f ||
+      std::abs(controller_->view_model().restore_duration - settings.restore_duration) > 0.0001f ||
+      std::abs(controller_->view_model().cancel_duration - settings.cancel_duration) > 0.0001f ||
       controller_->view_model().link_speeds != settings.link_speeds ||
       controller_->view_model().disable_animations_fullscreen !=
           settings.disable_animations_fullscreen ||
       controller_->view_model().disable_effects_battery_saver !=
           settings.disable_effects_battery_saver ||
-       controller_->view_model().minimize_easing != settings.minimize_easing ||
-       controller_->view_model().restore_easing != settings.restore_easing ||
-       controller_->view_model().cancel_easing != settings.cancel_easing ||
-       controller_->view_model().minimize_custom_bezier != settings.minimize_custom_bezier ||
-       controller_->view_model().restore_custom_bezier != settings.restore_custom_bezier ||
-       controller_->view_model().cancel_custom_bezier != settings.cancel_custom_bezier ||
+      controller_->view_model().minimize_easing != settings.minimize_easing ||
+      controller_->view_model().restore_easing != settings.restore_easing ||
+      controller_->view_model().cancel_easing != settings.cancel_easing ||
+      controller_->view_model().minimize_custom_bezier != settings.minimize_custom_bezier ||
+      controller_->view_model().restore_custom_bezier != settings.restore_custom_bezier ||
+      controller_->view_model().cancel_custom_bezier != settings.cancel_custom_bezier ||
       controller_->view_model().animation_style != settings.animation_style ||
       controller_->view_model().quality_mode != settings.quality_mode ||
-      std::abs(controller_->view_model().minimize_strength - settings.minimize_strength) > 0.0001f ||
+      std::abs(controller_->view_model().minimize_strength - settings.minimize_strength) >
+          0.0001f ||
       controller_->view_model().fade_strength != settings.fade_strength ||
       controller_->view_model().show_target_indicator != settings.show_target_indicator ||
       controller_->view_model().close_behavior != settings.close_behavior ||
@@ -215,10 +266,10 @@ void SettingsWindow::FlushPendingSpeedSave() {
                               restore_slider_active_ || cancel_slider_active_;
   if (speeds_pending) {
     const bool saved =
-        controller_ == nullptr || controller_->actions().SetAnimationDurations(
-                                       controller_->view_model().minimize_duration,
-                                       controller_->view_model().restore_duration,
-                                       controller_->view_model().cancel_duration, true);
+        controller_ == nullptr ||
+        controller_->actions().SetAnimationDurations(
+            controller_->view_model().minimize_duration, controller_->view_model().restore_duration,
+            controller_->view_model().cancel_duration, true);
     RecordSaveResult(saved);
     if (saved) {
       minimize_slider_dirty_ = false;
@@ -229,8 +280,8 @@ void SettingsWindow::FlushPendingSpeedSave() {
   const bool strength_pending = strength_slider_dirty_ || strength_slider_active_;
   if (strength_pending) {
     const bool saved =
-        controller_ == nullptr ||
-        controller_->actions().SetMinimizeStrength(controller_->view_model().minimize_strength, true);
+        controller_ == nullptr || controller_->actions().SetMinimizeStrength(
+                                      controller_->view_model().minimize_strength, true);
     RecordSaveResult(saved);
     if (saved) strength_slider_dirty_ = false;
   }
@@ -254,7 +305,8 @@ void SettingsWindow::RecordSaveResult(bool saved) {
     save_feedback_ = "Could not save settings";
     save_feedback_until_ms_ = GetTickCount64() + 5500;
     save_feedback_error_ = true;
-    minimize::core::LogDebug(L"Settings", L"Settings window could not persist the requested change");
+    minimize::core::LogDebug(L"Settings", L"Settings window could not persist the requested "
+                                          L"change");
   }
   ForceRender();
 }
@@ -436,9 +488,9 @@ bool SettingsWindow::WantsContinuousRendering() const {
   if (!renderer_.ready() || hwnd_ == nullptr || !IsWindowVisible(hwnd_)) {
     return false;
   }
-  return startup_enter_motion_active_ || animation_preview_.active() ||
-         update_workspace_engaged_ || update_resume_active_ ||
-         titlebar_dragging_ || motion_system_.HasActiveTracks() || render_requested_;
+  return startup_enter_motion_active_ || animation_preview_.active() || update_workspace_engaged_ ||
+         update_resume_active_ || titlebar_dragging_ || motion_system_.HasActiveTracks() ||
+         render_requested_;
 }
 
 }  // namespace minimize::ui

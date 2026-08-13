@@ -18,8 +18,8 @@ constexpr float kMaximumDuration = 2.00f;
 constexpr std::uint32_t kSupportedHotkeyModifiers = 0x000fu;
 
 constexpr std::array kHotkeyNames = {
-    std::string_view{"toggleEffectHotkey"},  std::string_view{"openSettingsHotkey"},
-    std::string_view{"repairWindowsHotkey"}, std::string_view{"minimizeAllWindowsHotkey"},
+    std::string_view{"toggleEffectHotkey"},      std::string_view{"openSettingsHotkey"},
+    std::string_view{"repairWindowsHotkey"},     std::string_view{"minimizeAllWindowsHotkey"},
     std::string_view{"restoreAllWindowsHotkey"},
 };
 
@@ -58,9 +58,8 @@ void ReadBezier(const Json& object, std::string_view key, animation::CubicBezier
   const auto value = object.find(key);
   if (value == object.end() || !value->is_array() || value->size() != 4) return;
   try {
-    animation::CubicBezier candidate{
-        value->at(0).get<float>(), value->at(1).get<float>(), value->at(2).get<float>(),
-        value->at(3).get<float>()};
+    animation::CubicBezier candidate{value->at(0).get<float>(), value->at(1).get<float>(),
+                                     value->at(2).get<float>(), value->at(3).get<float>()};
     if (!std::isfinite(candidate.x1) || !std::isfinite(candidate.y1) ||
         !std::isfinite(candidate.x2) || !std::isfinite(candidate.y2)) {
       return;
@@ -74,9 +73,8 @@ void ReadBezier(const Json& object, std::string_view key, animation::CubicBezier
 void ReadHotkeys(const Json& object, AppSettings& settings) {
   for (std::size_t index = 0; index < kHotkeyNames.size(); ++index) {
     const std::string prefix(kHotkeyNames[index]);
-    ReadIf<std::uint32_t>(
-        object, prefix + "Modifiers", settings.hotkeys[index].modifiers,
-        [](std::uint32_t value) { return value <= kSupportedHotkeyModifiers; });
+    ReadIf<std::uint32_t>(object, prefix + "Modifiers", settings.hotkeys[index].modifiers,
+                          [](std::uint32_t value) { return value <= kSupportedHotkeyModifiers; });
     ReadIf<std::uint32_t>(object, prefix + "Key", settings.hotkeys[index].virtual_key,
                           [](std::uint32_t value) { return value <= 254; });
   }
@@ -100,21 +98,15 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
 
   AppSettings loaded;
   ReadIf(document, "enabled", loaded.enabled);
-  ReadIf<float>(document, "minimizeDuration", loaded.minimize_duration,
-                [](float value) {
-                  return std::isfinite(value) && value >= kMinimumDuration &&
-                         value <= kMaximumDuration;
-                });
-  ReadIf<float>(document, "restoreDuration", loaded.restore_duration,
-                [](float value) {
-                  return std::isfinite(value) && value >= kMinimumDuration &&
-                         value <= kMaximumDuration;
-                });
-  ReadIf<float>(document, "cancelDuration", loaded.cancel_duration,
-                [](float value) {
-                  return std::isfinite(value) && value >= kMinimumDuration &&
-                         value <= kMaximumDuration;
-                });
+  ReadIf<float>(document, "minimizeDuration", loaded.minimize_duration, [](float value) {
+    return std::isfinite(value) && value >= kMinimumDuration && value <= kMaximumDuration;
+  });
+  ReadIf<float>(document, "restoreDuration", loaded.restore_duration, [](float value) {
+    return std::isfinite(value) && value >= kMinimumDuration && value <= kMaximumDuration;
+  });
+  ReadIf<float>(document, "cancelDuration", loaded.cancel_duration, [](float value) {
+    return std::isfinite(value) && value >= kMinimumDuration && value <= kMaximumDuration;
+  });
   ReadIf(document, "linkSpeeds", loaded.link_speeds);
   ReadIf(document, "disableAnimationsFullscreen", loaded.disable_animations_fullscreen);
   ReadIf(document, "disableEffectsBatterySaver", loaded.disable_effects_battery_saver);
@@ -125,17 +117,15 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
   ReadBezier(document, "restoreCustomBezier", loaded.restore_custom_bezier);
   ReadBezier(document, "cancelCustomBezier", loaded.cancel_custom_bezier);
   ReadIf<std::string>(document, "animationStyle", loaded.animation_style, IsValidAnimationStyle);
-  ReadIf<std::string>(
-      document, "qualityMode", loaded.quality_mode,
-      [](std::string_view value) {
-        return value == "automatic" || value == "best_quality" || value == "power_saving";
-      });
-  ReadIf<float>(document, "minimizeStrength", loaded.minimize_strength,
-                [](float value) { return std::isfinite(value) && value >= 0.25f && value <= 1.0f; });
-  ReadIf<std::string>(document, "fadeStrength", loaded.fade_strength,
-                      [](std::string_view value) {
-                        return value == "No fade" || value == "Subtle" || value == "Strong";
-                      });
+  ReadIf<std::string>(document, "qualityMode", loaded.quality_mode, [](std::string_view value) {
+    return value == "automatic" || value == "best_quality" || value == "power_saving";
+  });
+  ReadIf<float>(document, "minimizeStrength", loaded.minimize_strength, [](float value) {
+    return std::isfinite(value) && value >= 0.25f && value <= 1.0f;
+  });
+  ReadIf<std::string>(document, "fadeStrength", loaded.fade_strength, [](std::string_view value) {
+    return value == "No fade" || value == "Subtle" || value == "Strong";
+  });
   ReadIf(document, "showTargetIndicator", loaded.show_target_indicator);
   ReadIf(document, "smartSkipUnderLoad", loaded.smart_skip_under_load);
   ReadIf<std::string>(document, "closeBehavior", loaded.close_behavior,
@@ -144,6 +134,19 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
   ReadIf(document, "runAtStartup", loaded.run_at_startup);
   ReadIf(document, "excludedApplications", loaded.excluded_applications);
   ReadIf(document, "excludedDisplays", loaded.excluded_displays);
+  ReadIf<int>(document, "windowLeft", loaded.ui_window.left,
+              [](int value) { return value >= -100000 && value <= 100000; });
+  ReadIf<int>(document, "windowTop", loaded.ui_window.top,
+              [](int value) { return value >= -100000 && value <= 100000; });
+  ReadIf<int>(document, "windowRight", loaded.ui_window.right,
+              [](int value) { return value >= -100000 && value <= 100000; });
+  ReadIf<int>(document, "windowBottom", loaded.ui_window.bottom,
+              [](int value) { return value >= -100000 && value <= 100000; });
+  ReadIf(document, "windowMaximized", loaded.ui_window.maximized);
+  ReadIf<int>(document, "selectedPage", loaded.ui_window.selected_page,
+              [](int value) { return value >= 0 && value <= 7; });
+  ReadIf<float>(document, "pageScroll", loaded.ui_window.page_scroll,
+                [](float value) { return std::isfinite(value) && value >= 0.0f; });
   ReadHotkeys(document, loaded);
 
   NormalizeExcludedApplications(&loaded.excluded_applications);
@@ -193,6 +196,13 @@ std::string SettingsSerializer::Serialize(const AppSettings& settings) {
       {"runAtStartup", settings.run_at_startup},
       {"excludedApplications", excluded_applications},
       {"excludedDisplays", settings.excluded_displays},
+      {"windowLeft", settings.ui_window.left},
+      {"windowTop", settings.ui_window.top},
+      {"windowRight", settings.ui_window.right},
+      {"windowBottom", settings.ui_window.bottom},
+      {"windowMaximized", settings.ui_window.maximized},
+      {"selectedPage", settings.ui_window.selected_page},
+      {"pageScroll", settings.ui_window.page_scroll},
   };
   document.update(SerializeHotkeys(settings));
   return document.dump(2) + '\n';

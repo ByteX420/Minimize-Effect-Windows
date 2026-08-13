@@ -49,7 +49,8 @@ public:
   bool Initialize(HINSTANCE instance, ui::SettingsActions& actions);
   void Shutdown();
   void Show(bool show);
-  void SetInitialBounds(const RECT& bounds) { initial_bounds_ = bounds; }
+  void SetInitialBounds(const RECT& bounds);
+  void RestoreUiState(const settings::UiWindowState& state);
   void PrepareUpdateResume(int page, float page_scroll, bool maximized);
   void CompleteUpdateHandover();
   void UpdateState(const minimize::settings::AppSettings& settings);
@@ -90,9 +91,11 @@ private:
     kHotkeys,
     kDiagnostics,
 #ifdef _DEBUG
-    kStressTest,
-#endif
     kAbout,
+    kStressTest,
+#else
+    kAbout,
+#endif
   };
 
   static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM w_param, LPARAM l_param);
@@ -109,6 +112,7 @@ private:
   [[nodiscard]] std::optional<LRESULT> HandleTitlebarMessage(HWND hwnd, UINT message,
                                                              LPARAM l_param, float scale);
   void UpdateStartupEnterMotionGate();
+  void PersistUiState();
   [[nodiscard]] bool DetectStartupEnterMotionActive() const;
 
   HWND hwnd_ = nullptr;
@@ -175,6 +179,7 @@ private:
   bool initial_maximized_ = false;
   double update_grid_started_at_ = -1.0;
   std::optional<RECT> initial_bounds_;
+  bool position_initialized_ = false;
 };
 
 }  // namespace minimize::ui

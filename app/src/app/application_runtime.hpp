@@ -87,6 +87,7 @@ public:
   bool FocusOpenWindow(HWND window) override;
   ui::SettingsFileOperationResult ExportSettings() override;
   ui::SettingsFileOperationResult ImportSettings() override;
+  bool SaveUiWindowState(const settings::UiWindowState& state) override;
   void SetTemporaryPause(ui::TemporaryPauseAction action) override;
   ui::HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                    settings::HotkeyBinding binding) override;

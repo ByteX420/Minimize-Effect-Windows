@@ -86,6 +86,9 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
                                          options.initial_maximized);
   }
   settings_window_.UpdateState(settings_service_.Get());
+  if (!options.IsUpdateHandover()) {
+    settings_window_.RestoreUiState(settings_service_.Get().ui_window);
+  }
   if (!options.IsUpdateHandover() && !StartRuntimeServices()) return false;
 
   // During a handover the replacement process paints this window first and starts hooks only

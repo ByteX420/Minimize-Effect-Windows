@@ -65,6 +65,17 @@ AppSettings SettingsValidator::Normalize(AppSettings settings) {
     settings.close_behavior = "exit";
   }
   NormalizeExcludedApplications(&settings.excluded_applications);
+  if (!settings.ui_window.HasPlacement()) {
+    settings.ui_window.left = 0;
+    settings.ui_window.top = 0;
+    settings.ui_window.right = 0;
+    settings.ui_window.bottom = 0;
+    settings.ui_window.maximized = false;
+  }
+  settings.ui_window.selected_page = std::clamp(settings.ui_window.selected_page, 0, 7);
+  if (!std::isfinite(settings.ui_window.page_scroll) || settings.ui_window.page_scroll < 0.0f) {
+    settings.ui_window.page_scroll = 0.0f;
+  }
   for (HotkeyBinding& hotkey : settings.hotkeys) {
     hotkey.modifiers &= 0x000fu;
     if (hotkey.virtual_key > 254u) hotkey.virtual_key = 0;
