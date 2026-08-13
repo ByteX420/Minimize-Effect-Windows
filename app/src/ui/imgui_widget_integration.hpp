@@ -27,6 +27,9 @@ namespace WindowMotion {
 
 class MotionSystemAdapter final {
 public:
+  void begin_frame(float delta_time) { system_.BeginFrame(delta_time); }
+  [[nodiscard]] bool has_active_tracks() const { return system_.HasActiveTracks(); }
+
   float value(const minimize::ui::motion::MotionKey& key, float target,
               const minimize::ui::motion::MotionSpec& spec, float initial) {
     return system_.AnimateValue(key, target, spec, initial);
@@ -58,6 +61,10 @@ inline MotionSystemAdapter& System() {
   static MotionSystemAdapter system;
   return system;
 }
+
+inline void BeginFrame(float delta_time) { System().begin_frame(delta_time); }
+
+inline bool HasActiveTracks() { return System().has_active_tracks(); }
 
 inline const MotionTokenAdapter& Tokens() {
   static const MotionTokenAdapter tokens = [] {

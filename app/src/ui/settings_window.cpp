@@ -13,6 +13,7 @@
 #include "settings/app_settings.hpp"
 #include "ui/components/page_layout.hpp"
 #include "ui/hotkey_presenter.hpp"
+#include "ui/imgui_widget_integration.hpp"
 #include "ui/pages/about_page.hpp"
 #include "ui/pages/animation_page.hpp"
 #include "ui/pages/applications_page.hpp"
@@ -470,7 +471,8 @@ void SettingsWindow::Render() {
   const bool feedback_active = !save_feedback_.empty() && now_ms < save_feedback_until_ms_;
   const bool update_active = update_workspace_engaged_ || update_resume_active_;
   if (!is_animating && !titlebar_dragging_ && !animation_preview_.active() && !feedback_active &&
-      !update_active && !motion_system_.HasActiveTracks() && !render_requested_)
+      !update_active && !motion_system_.HasActiveTracks() && !WindowMotion::HasActiveTracks() &&
+      !render_requested_)
     return;
   render_requested_ = false;
   if (!renderer_.BeginFrame()) {
@@ -478,6 +480,7 @@ void SettingsWindow::Render() {
     return;
   }
   motion_system_.BeginFrame(ImGui::GetIO().DeltaTime);
+  WindowMotion::BeginFrame(ImGui::GetIO().DeltaTime);
   SettingsShell::Render(*this);
   UpdateStartupEnterMotionGate();
   if (!renderer_.EndFrame()) render_requested_ = true;
@@ -491,7 +494,7 @@ bool SettingsWindow::WantsContinuousRendering() const {
   }
   return startup_enter_motion_active_ || animation_preview_.active() || update_workspace_engaged_ ||
          update_resume_active_ || titlebar_dragging_ || motion_system_.HasActiveTracks() ||
-         render_requested_;
+         WindowMotion::HasActiveTracks() || render_requested_;
 }
 
 }  // namespace minimize::ui
