@@ -28,6 +28,7 @@ void SettingsViewModel::Apply(const settings::AppSettings& settings) {
   run_at_startup = settings.run_at_startup;
   start_minimized = settings.start_minimized;
   excluded_applications = settings.excluded_applications;
+  motion_profiles = settings.motion_profiles;
   hotkeys = settings.hotkeys;
 }
 

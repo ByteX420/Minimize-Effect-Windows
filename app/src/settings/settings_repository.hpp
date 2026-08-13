@@ -13,6 +13,6 @@ class SettingsRepository final {
 public:
   [[nodiscard]] static std::wstring Path();
   [[nodiscard]] AppSettings Load() const;
-  [[nodiscard]] bool Save(const AppSettings& settings) const;
+  [[nodiscard]] bool Save(const AppSettings& settings, bool create_backup = true) const;
 };
 }  // namespace minimize::settings

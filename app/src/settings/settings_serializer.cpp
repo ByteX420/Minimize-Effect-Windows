@@ -90,6 +90,65 @@ Json SerializeHotkeys(const AppSettings& settings) {
   return hotkeys;
 }
 
+void ReadMotionProfiles(const Json& object, AppSettings& settings) {
+  const auto value = object.find("motionProfiles");
+  if (value == object.end() || !value->is_array()) return;
+  for (const Json& item : *value) {
+    if (!item.is_object()) continue;
+    MotionProfile profile;
+    ReadIf(item, "name", profile.name);
+    ReadIf(item, "minimizeDuration", profile.minimize_duration);
+    ReadIf(item, "restoreDuration", profile.restore_duration);
+    ReadIf(item, "cancelDuration", profile.cancel_duration);
+    ReadIf(item, "linkSpeeds", profile.link_speeds);
+    ReadIf<std::string>(item, "minimizeEasing", profile.minimize_easing, IsValidEasingName);
+    ReadIf<std::string>(item, "restoreEasing", profile.restore_easing, IsValidEasingName);
+    ReadIf<std::string>(item, "cancelEasing", profile.cancel_easing, IsValidEasingName);
+    ReadBezier(item, "minimizeCustomBezier", profile.minimize_custom_bezier);
+    ReadBezier(item, "restoreCustomBezier", profile.restore_custom_bezier);
+    ReadBezier(item, "cancelCustomBezier", profile.cancel_custom_bezier);
+    ReadIf<std::string>(item, "animationStyle", profile.animation_style, IsValidAnimationStyle);
+    ReadIf(item, "qualityMode", profile.quality_mode);
+    ReadIf(item, "minimizeStrength", profile.minimize_strength);
+    ReadIf(item, "fadeStrength", profile.fade_strength);
+    ReadIf(item, "showTargetIndicator", profile.show_target_indicator);
+    ReadIf(item, "smartSkipUnderLoad", profile.smart_skip_under_load);
+    settings.motion_profiles.push_back(std::move(profile));
+  }
+}
+
+Json SerializeMotionProfiles(const AppSettings& settings) {
+  Json profiles = Json::array();
+  for (const MotionProfile& profile : settings.motion_profiles) {
+    profiles.push_back({
+        {"name", profile.name},
+        {"minimizeDuration", profile.minimize_duration},
+        {"restoreDuration", profile.restore_duration},
+        {"cancelDuration", profile.cancel_duration},
+        {"linkSpeeds", profile.link_speeds},
+        {"minimizeEasing", profile.minimize_easing},
+        {"restoreEasing", profile.restore_easing},
+        {"cancelEasing", profile.cancel_easing},
+        {"minimizeCustomBezier",
+         {profile.minimize_custom_bezier.x1, profile.minimize_custom_bezier.y1,
+          profile.minimize_custom_bezier.x2, profile.minimize_custom_bezier.y2}},
+        {"restoreCustomBezier",
+         {profile.restore_custom_bezier.x1, profile.restore_custom_bezier.y1,
+          profile.restore_custom_bezier.x2, profile.restore_custom_bezier.y2}},
+        {"cancelCustomBezier",
+         {profile.cancel_custom_bezier.x1, profile.cancel_custom_bezier.y1,
+          profile.cancel_custom_bezier.x2, profile.cancel_custom_bezier.y2}},
+        {"animationStyle", profile.animation_style},
+        {"qualityMode", profile.quality_mode},
+        {"minimizeStrength", profile.minimize_strength},
+        {"fadeStrength", profile.fade_strength},
+        {"showTargetIndicator", profile.show_target_indicator},
+        {"smartSkipUnderLoad", profile.smart_skip_under_load},
+    });
+  }
+  return profiles;
+}
+
 }  // namespace
 
 std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json) {
@@ -134,6 +193,7 @@ std::optional<AppSettings> SettingsSerializer::Deserialize(std::string_view json
   ReadIf(document, "runAtStartup", loaded.run_at_startup);
   ReadIf(document, "excludedApplications", loaded.excluded_applications);
   ReadIf(document, "excludedDisplays", loaded.excluded_displays);
+  ReadMotionProfiles(document, loaded);
   ReadIf<int>(document, "windowLeft", loaded.ui_window.left,
               [](int value) { return value >= -100000 && value <= 100000; });
   ReadIf<int>(document, "windowTop", loaded.ui_window.top,
@@ -196,6 +256,7 @@ std::string SettingsSerializer::Serialize(const AppSettings& settings) {
       {"runAtStartup", settings.run_at_startup},
       {"excludedApplications", excluded_applications},
       {"excludedDisplays", settings.excluded_displays},
+      {"motionProfiles", SerializeMotionProfiles(settings)},
       {"windowLeft", settings.ui_window.left},
       {"windowTop", settings.ui_window.top},
       {"windowRight", settings.ui_window.right},

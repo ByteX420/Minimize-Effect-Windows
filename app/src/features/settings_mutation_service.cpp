@@ -16,6 +16,72 @@
 #include "settings/settings_validator.hpp"
 
 namespace minimize::features {
+namespace {
+
+std::string NormalizeProfileName(std::string name) {
+  const std::size_t first = name.find_first_not_of(" \t\r\n");
+  if (first == std::string::npos) return {};
+  const std::size_t last = name.find_last_not_of(" \t\r\n");
+  name = name.substr(first, last - first + 1);
+  if (name.size() > 48) name.resize(48);
+  return name;
+}
+
+settings::MotionProfile CaptureMotionProfile(std::string name,
+                                             const settings::AppSettings& current) {
+  return settings::MotionProfile{
+      .name = std::move(name),
+      .minimize_duration = current.minimize_duration,
+      .restore_duration = current.restore_duration,
+      .cancel_duration = current.cancel_duration,
+      .link_speeds = current.link_speeds,
+      .minimize_easing = current.minimize_easing,
+      .restore_easing = current.restore_easing,
+      .cancel_easing = current.cancel_easing,
+      .minimize_custom_bezier = current.minimize_custom_bezier,
+      .restore_custom_bezier = current.restore_custom_bezier,
+      .cancel_custom_bezier = current.cancel_custom_bezier,
+      .animation_style = current.animation_style,
+      .quality_mode = current.quality_mode,
+      .minimize_strength = current.minimize_strength,
+      .fade_strength = current.fade_strength,
+      .show_target_indicator = current.show_target_indicator,
+      .smart_skip_under_load = current.smart_skip_under_load,
+  };
+}
+
+void CopyMotionProfileToSettings(const settings::MotionProfile& profile,
+                                 settings::AppSettings* target) {
+  if (target == nullptr) return;
+  target->minimize_duration = profile.minimize_duration;
+  target->restore_duration = profile.restore_duration;
+  target->cancel_duration = profile.cancel_duration;
+  target->link_speeds = profile.link_speeds;
+  target->minimize_easing = profile.minimize_easing;
+  target->restore_easing = profile.restore_easing;
+  target->cancel_easing = profile.cancel_easing;
+  target->minimize_custom_bezier = profile.minimize_custom_bezier;
+  target->restore_custom_bezier = profile.restore_custom_bezier;
+  target->cancel_custom_bezier = profile.cancel_custom_bezier;
+  target->animation_style = profile.animation_style;
+  target->quality_mode = profile.quality_mode;
+  target->minimize_strength = profile.minimize_strength;
+  target->fade_strength = profile.fade_strength;
+  target->show_target_indicator = profile.show_target_indicator;
+  target->smart_skip_under_load = profile.smart_skip_under_load;
+}
+
+std::optional<settings::AppSettings> ReadSettingsFile(const std::filesystem::path& path) {
+  std::ifstream input(path, std::ios::binary);
+  if (!input) return std::nullopt;
+  std::string json((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  if (json.empty() || json.size() > 1024 * 1024) return std::nullopt;
+  auto decoded = settings::SettingsSerializer::Deserialize(json);
+  if (!decoded.has_value()) return std::nullopt;
+  return settings::SettingsValidator::Normalize(std::move(*decoded));
+}
+
+}  // namespace
 
 bool SettingsMutationService::SetEnabled(bool enabled, const std::function<void()>& applied) {
   if (settings_.Get().enabled == enabled) return true;
@@ -186,6 +252,78 @@ bool SettingsMutationService::SetSmartSkipUnderLoad(bool enabled,
   return true;
 }
 
+bool SettingsMutationService::SaveMotionProfile(const std::string& name) {
+  const std::string normalized = NormalizeProfileName(name);
+  if (normalized.empty()) return false;
+  auto proposed = settings_.Get();
+  auto existing = std::find_if(
+      proposed.motion_profiles.begin(), proposed.motion_profiles.end(),
+      [&](const settings::MotionProfile& profile) { return profile.name == normalized; });
+  settings::MotionProfile profile = CaptureMotionProfile(normalized, proposed);
+  if (existing == proposed.motion_profiles.end()) {
+    if (proposed.motion_profiles.size() >= 20) return false;
+    proposed.motion_profiles.push_back(std::move(profile));
+  } else {
+    *existing = std::move(profile);
+  }
+  return settings_.Update(std::move(proposed));
+}
+
+bool SettingsMutationService::ApplyMotionProfile(const std::string& name,
+                                                 const std::function<void()>& applied) {
+  auto proposed = settings_.Get();
+  const auto profile =
+      std::find_if(proposed.motion_profiles.begin(), proposed.motion_profiles.end(),
+                   [&](const settings::MotionProfile& item) { return item.name == name; });
+  if (profile == proposed.motion_profiles.end()) return false;
+  CopyMotionProfileToSettings(*profile, &proposed);
+  if (!settings_.Update(std::move(proposed))) return false;
+  if (applied) applied();
+  return true;
+}
+
+bool SettingsMutationService::DeleteMotionProfile(const std::string& name) {
+  auto proposed = settings_.Get();
+  const auto profile =
+      std::find_if(proposed.motion_profiles.begin(), proposed.motion_profiles.end(),
+                   [&](const settings::MotionProfile& item) { return item.name == name; });
+  if (profile == proposed.motion_profiles.end()) return false;
+  proposed.motion_profiles.erase(profile);
+  return settings_.Update(std::move(proposed));
+}
+
+bool SettingsMutationService::Undo(const std::function<void()>& applied) {
+  const bool previous_startup = settings_.Get().run_at_startup;
+  if (!settings_.Undo()) return false;
+  if (!platform::windows::ConfigureRunAtStartup(settings_.Get().run_at_startup)) {
+    (void)settings_.Undo();
+    (void)platform::windows::ConfigureRunAtStartup(previous_startup);
+    return false;
+  }
+  if (applied) applied();
+  return true;
+}
+
+bool SettingsMutationService::RestoreBackup(const std::function<void()>& applied,
+                                            bool* out_startup_registration_failed) {
+  if (out_startup_registration_failed) *out_startup_registration_failed = false;
+  const std::wstring live = settings::SettingsRepository::Path();
+  if (live.empty()) return false;
+  auto proposed = ReadSettingsFile(std::filesystem::path(live).wstring() + L".bak");
+  if (!proposed.has_value()) return false;
+  const bool previous_startup = settings_.Get().run_at_startup;
+  const bool desired_startup = proposed->run_at_startup;
+  if (!settings_.Update(std::move(*proposed), true, false)) return false;
+  if (!platform::windows::ConfigureRunAtStartup(desired_startup)) {
+    auto repaired = settings_.Get();
+    repaired.run_at_startup = previous_startup;
+    (void)settings_.Update(std::move(repaired), false, false);
+    if (out_startup_registration_failed) *out_startup_registration_failed = true;
+  }
+  if (applied) applied();
+  return true;
+}
+
 bool SettingsMutationService::SetCloseBehavior(const std::string& behavior) {
   if (behavior != "exit" && behavior != "tray") return false;
   auto proposed = settings_.Get();
@@ -201,7 +339,7 @@ bool SettingsMutationService::SetStartupOptions(bool run_at_startup, bool start_
   if (!settings_.Update(std::move(proposed))) return false;
   if (run_at_startup != previous.run_at_startup &&
       !platform::windows::ConfigureRunAtStartup(run_at_startup)) {
-    (void)settings_.Update(previous);
+    (void)settings_.Update(previous, false, false);
     return false;
   }
   return true;
@@ -288,7 +426,7 @@ bool SettingsMutationService::ImportSettingsFromFile(const std::wstring& path,
   if (!platform::windows::ConfigureRunAtStartup(desired_startup)) {
     auto rolled_back = settings_.Get();
     rolled_back.run_at_startup = previous_startup;
-    if (!settings_.Update(std::move(rolled_back))) {
+    if (!settings_.Update(std::move(rolled_back), false, false)) {
       core::LogDebug(L"Settings", L"Import applied but failed to roll back runAtStartup");
     }
     if (out_startup_registration_failed) *out_startup_registration_failed = true;
@@ -312,7 +450,7 @@ bool SettingsMutationService::ExportSettingsToFile(const std::wstring& path) con
 bool SettingsMutationService::SaveUiWindowState(const settings::UiWindowState& state) {
   auto proposed = settings_.Get();
   proposed.ui_window = state;
-  return settings_.Update(std::move(proposed));
+  return settings_.Update(std::move(proposed), false, false);
 }
 
 }  // namespace minimize::features

@@ -133,6 +133,36 @@ void GeneralPage::Render(::minimize::ui::SettingsWindow& window, components::Pag
     window.RecordFileOperationResult(window.controller_->actions().ImportSettings());
   }
   layout.EndRow();
+
+  layout.BeginRow(::minimize::ui::theme::Metrics::kRowHeightTall);
+  layout.ReserveControl(button_width);
+  layout.RowTitle(window.font_body_, kLabelTextSize, "Undo last change", kPrimaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                     "Swap the most recent saved configuration change", kSecondaryTextColor);
+  cursor = layout.ControlCursor(button_width, button_height);
+  layout.SetCursor(cursor.x, cursor.y);
+  const bool can_undo = window.controller_->actions().CanUndoSettings();
+  if (ui::components::CompactButton(motion, "##undo_settings", "Undo",
+                                    ImVec2(button_width, button_height), window.font_body_, scale,
+                                    alpha, can_undo) &&
+      can_undo) {
+    window.RecordSaveResult(window.controller_->actions().UndoSettings());
+  }
+  layout.EndRow();
+
+  layout.BeginRow(::minimize::ui::theme::Metrics::kRowHeightTall);
+  layout.ReserveControl(button_width);
+  layout.RowTitle(window.font_body_, kLabelTextSize, "Restore automatic backup", kPrimaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                     "Load settings.json.bak without replacing it", kSecondaryTextColor);
+  cursor = layout.ControlCursor(button_width, button_height);
+  layout.SetCursor(cursor.x, cursor.y);
+  if (ui::components::CompactButton(motion, "##restore_settings_backup", "Restore",
+                                    ImVec2(button_width, button_height), window.font_body_, scale,
+                                    alpha)) {
+    window.RecordFileOperationResult(window.controller_->actions().RestoreSettingsBackup());
+  }
+  layout.EndRow();
   layout.EndGroup();
 }
 

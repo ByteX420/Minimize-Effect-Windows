@@ -59,6 +59,12 @@ public:
   virtual bool ResetMotionSettings() = 0;
   virtual bool SetTargetIndicator(bool enabled) = 0;
   virtual bool SetSmartSkipUnderLoad(bool enabled) = 0;
+  virtual bool SaveMotionProfile(const std::string& name) = 0;
+  virtual bool ApplyMotionProfile(const std::string& name) = 0;
+  virtual bool DeleteMotionProfile(const std::string& name) = 0;
+  [[nodiscard]] virtual bool CanUndoSettings() const = 0;
+  virtual bool UndoSettings() = 0;
+  virtual SettingsFileOperationResult RestoreSettingsBackup() = 0;
   virtual bool SetCloseBehavior(const std::string& behavior) = 0;
   virtual bool SetStartupOptions(bool run_at_startup, bool start_minimized) = 0;
   virtual bool SetApplicationExcluded(const std::string& executable, bool excluded) = 0;

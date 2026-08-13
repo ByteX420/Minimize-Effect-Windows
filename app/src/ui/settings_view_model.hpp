@@ -44,6 +44,7 @@ public:
   bool run_at_startup = false;
   bool start_minimized = false;
   std::vector<std::string> excluded_applications;
+  std::vector<settings::MotionProfile> motion_profiles;
 };
 
 }  // namespace minimize::ui

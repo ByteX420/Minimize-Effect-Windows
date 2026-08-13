@@ -43,7 +43,7 @@ bool ApplicationRuntime::Initialize(HINSTANCE instance, const ApplicationLaunchO
                              L"Could not repair the per-user startup entry; disabling the option");
     auto repaired_settings = settings_service_.Get();
     repaired_settings.run_at_startup = false;
-    if (!settings_service_.Update(std::move(repaired_settings))) {
+    if (!settings_service_.Update(std::move(repaired_settings), false, false)) {
       minimize::core::LogDebug(L"Startup", L"Could not persist the repaired startup state");
     }
   }

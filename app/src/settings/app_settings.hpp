@@ -26,6 +26,28 @@ struct UiWindowState {
   bool operator==(const UiWindowState&) const = default;
 };
 
+struct MotionProfile {
+  std::string name;
+  float minimize_duration = kDefaultMinimizeDuration;
+  float restore_duration = kDefaultRestoreDuration;
+  float cancel_duration = kDefaultCancelDuration;
+  bool link_speeds = false;
+  std::string minimize_easing = "Ease In Out";
+  std::string restore_easing = "Ease In Out";
+  std::string cancel_easing = "Linear";
+  animation::CubicBezier minimize_custom_bezier = animation::CubicBezier::EaseInOut();
+  animation::CubicBezier restore_custom_bezier = animation::CubicBezier::EaseInOut();
+  animation::CubicBezier cancel_custom_bezier = animation::CubicBezier::EaseInOut();
+  std::string animation_style = "Genie classic";
+  std::string quality_mode = "automatic";
+  float minimize_strength = 1.0f;
+  std::string fade_strength = "Subtle";
+  bool show_target_indicator = false;
+  bool smart_skip_under_load = true;
+
+  bool operator==(const MotionProfile&) const = default;
+};
+
 struct AppSettings {
   bool enabled = true;
   float minimize_duration = kDefaultMinimizeDuration;
@@ -52,6 +74,7 @@ struct AppSettings {
   std::vector<std::string> excluded_applications;
   // Persisted GDI device names (MONITORINFOEX.szDevice), e.g. "\\\\.\\DISPLAY1".
   std::vector<std::string> excluded_displays;
+  std::vector<MotionProfile> motion_profiles;
   UiWindowState ui_window;
   std::array<HotkeyBinding, static_cast<std::size_t>(HotkeyAction::kCount)> hotkeys = {
       HotkeyBinding{.modifiers = 0x0001u | 0x0002u, .virtual_key = 'G'},

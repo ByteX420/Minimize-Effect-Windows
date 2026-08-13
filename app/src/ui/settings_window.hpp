@@ -130,6 +130,8 @@ private:
   bool cancel_bezier_active_ = false;
   bool strength_slider_active_ = false;
   bool strength_slider_dirty_ = false;
+  std::array<char, 49> motion_profile_name_{};
+  int selected_motion_profile_ = 0;
   std::array<char, 260> exclusion_input_{};
   std::string exclusion_error_;
   ULONGLONG last_active_apps_refresh_ms_ = 0;

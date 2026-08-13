@@ -1146,6 +1146,61 @@ bool ApplicationRuntime::SetSmartSkipUnderLoad(bool enabled) {
   return result;
 }
 
+bool ApplicationRuntime::SaveMotionProfile(const std::string& name) {
+  const bool result = settings_mutations_.SaveMotionProfile(name);
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+bool ApplicationRuntime::ApplyMotionProfile(const std::string& name) {
+  const bool result = settings_mutations_.ApplyMotionProfile(
+      name, [this] { effect_policy_.Configure(settings_service_.Get()); });
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+bool ApplicationRuntime::DeleteMotionProfile(const std::string& name) {
+  const bool result = settings_mutations_.DeleteMotionProfile(name);
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+bool ApplicationRuntime::CanUndoSettings() const { return settings_mutations_.CanUndo(); }
+
+void ApplicationRuntime::ApplyRestoredSettings() {
+  effect_policy_.Configure(settings_service_.Get());
+  window_exclusion_service_.SetExcludedDisplays(settings_service_.Get().excluded_displays);
+  effect_controller_.ApplyExclusionTransitionOverrides(GetOverlayWindow());
+  RegisterConfiguredHotkeys();
+  RefreshEffectRuntimeState();
+}
+
+bool ApplicationRuntime::UndoSettings() {
+  const bool result = settings_mutations_.Undo([this] { ApplyRestoredSettings(); });
+  settings_window_.UpdateState(settings_service_.Get());
+  return result;
+}
+
+ui::SettingsFileOperationResult ApplicationRuntime::RestoreSettingsBackup() {
+  bool startup_registration_failed = false;
+  const bool restored = settings_mutations_.RestoreBackup([this] { ApplyRestoredSettings(); },
+                                                          &startup_registration_failed);
+  settings_window_.UpdateState(settings_service_.Get());
+  if (!restored) {
+    return ui::SettingsFileOperationResult{
+        .result = ui::SettingsFileResult::kFailed,
+        .message = "No valid settings backup found",
+        .is_error = true,
+    };
+  }
+  return ui::SettingsFileOperationResult{
+      .result = ui::SettingsFileResult::kSuccess,
+      .message = startup_registration_failed ? "Backup restored, startup registration failed"
+                                             : "Settings backup restored",
+      .is_error = startup_registration_failed,
+  };
+}
+
 bool ApplicationRuntime::SetCloseBehavior(const std::string& close_behavior) {
   const bool result = settings_mutations_.SetCloseBehavior(close_behavior);
   settings_window_.UpdateState(settings_service_.Get());
@@ -1336,14 +1391,7 @@ ui::SettingsFileOperationResult ApplicationRuntime::ImportSettings() {
   }
   bool startup_registration_failed = false;
   const bool loaded = settings_mutations_.ImportSettingsFromFile(
-      picker.path,
-      [this] {
-        effect_policy_.Configure(settings_service_.Get());
-        window_exclusion_service_.SetExcludedDisplays(settings_service_.Get().excluded_displays);
-        RegisterConfiguredHotkeys();
-        RefreshEffectRuntimeState();
-      },
-      &startup_registration_failed);
+      picker.path, [this] { ApplyRestoredSettings(); }, &startup_registration_failed);
   settings_window_.UpdateState(settings_service_.Get());
   if (!loaded) {
     return ui::SettingsFileOperationResult{

@@ -235,6 +235,7 @@ void SettingsWindow::UpdateState(const minimize::settings::AppSettings& settings
       controller_->view_model().run_at_startup != settings.run_at_startup ||
       controller_->view_model().start_minimized != settings.start_minimized ||
       controller_->view_model().excluded_applications != settings.excluded_applications ||
+      controller_->view_model().motion_profiles != settings.motion_profiles ||
       controller_->view_model().hotkeys != settings.hotkeys;
   controller_->view_model().Apply(settings);
   if (enabled_changed) tray_icon_.UpdateTooltip(hwnd_, controller_->view_model());

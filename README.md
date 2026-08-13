@@ -23,12 +23,14 @@ It is a native **C++ / Direct3D 11 / DirectComposition** project with a polished
 - **DWM Native dragging** — `WM_NCHITTEST` returning `HTCAPTION` for smooth window movement and Windows 11 Snap Layouts
 - **Concurrent animations** — multiple windows can animate without blocking each other
 - **Separate motion controls** — minimize vs restore duration, linked or independent speeds
+- **Named motion profiles** — save and reapply complete timing, curve, style, and quality setups
 - **Easing & style options** — presets, custom cubic-bezier, classic / curvy / squash, strength, fade
 - **Automatic quality** — adaptive mesh density under load and resolution pressure (8-bit R8 mask textures save 75% VRAM)
 - **App exclusions** — skip the effect for specific executables
 - **System integration** — run at startup, start minimized, tray icon, close-to-tray or exit (managed with Microsoft WIL)
 - **Hotkeys** — toggle the effect, open settings, repair windows (configurable)
 - **Settings UI** — dark macOS-inspired shell (traffic lights, sidebar, cards, motion)
+- **Safe settings recovery** — one-step undo/redo plus an automatically maintained backup
 - **Repair / diagnostics** — status for effect, hook, renderer, D3D device, display, and administrator restart
 - **Native animation suppression** — disables classic shell + DWM transitions while running
 - **Device-lost recovery** — recreates capture/overlay/settings renderers after GPU resets

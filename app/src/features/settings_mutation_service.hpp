@@ -29,6 +29,13 @@ public:
   bool ResetMotionSettings();
   bool SetTargetIndicator(bool enabled);
   bool SetSmartSkipUnderLoad(bool enabled, const std::function<void()>& applied);
+  bool SaveMotionProfile(const std::string& name);
+  bool ApplyMotionProfile(const std::string& name, const std::function<void()>& applied);
+  bool DeleteMotionProfile(const std::string& name);
+  [[nodiscard]] bool CanUndo() const { return settings_.CanUndo(); }
+  bool Undo(const std::function<void()>& applied);
+  bool RestoreBackup(const std::function<void()>& applied,
+                     bool* out_startup_registration_failed = nullptr);
   bool SetCloseBehavior(const std::string& behavior);
   bool SetStartupOptions(bool run_at_startup, bool start_minimized);
   bool SetApplicationExcluded(const std::string& executable, bool excluded,

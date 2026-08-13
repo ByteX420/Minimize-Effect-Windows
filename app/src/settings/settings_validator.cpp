@@ -65,6 +65,41 @@ AppSettings SettingsValidator::Normalize(AppSettings settings) {
     settings.close_behavior = "exit";
   }
   NormalizeExcludedApplications(&settings.excluded_applications);
+  std::unordered_set<std::string> profile_names;
+  std::erase_if(settings.motion_profiles, [&profile_names](MotionProfile& profile) {
+    if (profile.name.empty() || profile.name.size() > 48 ||
+        !profile_names.insert(profile.name).second || profile_names.size() > 20) {
+      return true;
+    }
+    profile.minimize_duration = std::isfinite(profile.minimize_duration)
+                                    ? std::clamp(profile.minimize_duration, 0.10f, 2.00f)
+                                    : kDefaultMinimizeDuration;
+    profile.restore_duration = std::isfinite(profile.restore_duration)
+                                   ? std::clamp(profile.restore_duration, 0.10f, 2.00f)
+                                   : kDefaultRestoreDuration;
+    profile.cancel_duration = std::isfinite(profile.cancel_duration)
+                                  ? std::clamp(profile.cancel_duration, 0.10f, 2.00f)
+                                  : kDefaultCancelDuration;
+    profile.minimize_strength = std::isfinite(profile.minimize_strength)
+                                    ? std::clamp(profile.minimize_strength, 0.25f, 1.00f)
+                                    : 1.0f;
+    if (!IsValidEasing(profile.minimize_easing)) profile.minimize_easing = "Ease In Out";
+    if (!IsValidEasing(profile.restore_easing)) profile.restore_easing = "Ease In Out";
+    if (!IsValidEasing(profile.cancel_easing)) profile.cancel_easing = "Linear";
+    profile.minimize_custom_bezier.ClampHandles();
+    profile.restore_custom_bezier.ClampHandles();
+    profile.cancel_custom_bezier.ClampHandles();
+    if (!IsValidStyle(profile.animation_style)) profile.animation_style = "Genie classic";
+    if (profile.quality_mode != "automatic" && profile.quality_mode != "best_quality" &&
+        profile.quality_mode != "power_saving") {
+      profile.quality_mode = "automatic";
+    }
+    if (profile.fade_strength != "No fade" && profile.fade_strength != "Subtle" &&
+        profile.fade_strength != "Strong") {
+      profile.fade_strength = "Subtle";
+    }
+    return false;
+  });
   if (!settings.ui_window.HasPlacement()) {
     settings.ui_window.left = 0;
     settings.ui_window.top = 0;

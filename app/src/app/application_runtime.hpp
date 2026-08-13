@@ -78,6 +78,12 @@ public:
   bool ResetMotionSettings() override;
   bool SetTargetIndicator(bool enabled) override;
   bool SetSmartSkipUnderLoad(bool enabled) override;
+  bool SaveMotionProfile(const std::string& name) override;
+  bool ApplyMotionProfile(const std::string& name) override;
+  bool DeleteMotionProfile(const std::string& name) override;
+  [[nodiscard]] bool CanUndoSettings() const override;
+  bool UndoSettings() override;
+  ui::SettingsFileOperationResult RestoreSettingsBackup() override;
   bool SetCloseBehavior(const std::string& close_behavior) override;
   bool SetStartupOptions(bool run_at_startup, bool start_minimized) override;
   bool SetApplicationExcluded(const std::string& executable_name, bool excluded) override;
@@ -162,6 +168,7 @@ private:
   void EnableEffectRuntime();
   void DisableEffectRuntime();
   void RefreshEffectRuntimeState();
+  void ApplyRestoredSettings();
   [[nodiscard]] features::RenderingPressure GetRenderingPressure() const;
   [[nodiscard]] HWND GetOverlayWindow() const;
   void ResetAnimationFramePacing(int run_index, HWND window, const RECT& animation_bounds);

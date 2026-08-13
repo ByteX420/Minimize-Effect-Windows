@@ -51,7 +51,7 @@ AppSettings SettingsRepository::Load() const {
   return SettingsValidator::Normalize(std::move(*deserialized));
 }
 
-bool SettingsRepository::Save(const AppSettings& settings) const {
+bool SettingsRepository::Save(const AppSettings& settings, bool create_backup) const {
   const std::wstring path = Path();
   if (path.empty()) return false;
   const std::filesystem::path settings_path(path);
@@ -67,6 +67,15 @@ bool SettingsRepository::Save(const AppSettings& settings) const {
     output.flush();
     if (!output) {
       output.close();
+      std::filesystem::remove(temporary_path, error);
+      return false;
+    }
+  }
+  if (create_backup && std::filesystem::exists(settings_path, error) && !error) {
+    const std::filesystem::path backup_path = settings_path.wstring() + L".bak";
+    std::filesystem::copy_file(settings_path, backup_path,
+                               std::filesystem::copy_options::overwrite_existing, error);
+    if (error) {
       std::filesystem::remove(temporary_path, error);
       return false;
     }

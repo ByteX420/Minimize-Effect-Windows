@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <format>
 #include <tuple>
+#include <vector>
 
 #include "ui/components/combo.hpp"
 #include "ui/components/controls.hpp"
@@ -100,6 +102,105 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     window.RecordSaveResult(ok);
   }
 
+  layout.SectionCaption(window.font_small_, kCaptionTextSize, "PROFILES");
+  layout.BeginGroup();
+  const float profile_field_width = layout.ControlMaxWidth(340.0f);
+  if (!model.motion_profiles.empty()) {
+    window.selected_motion_profile_ = std::clamp(
+        window.selected_motion_profile_, 0, static_cast<int>(model.motion_profiles.size()) - 1);
+    std::vector<const char*> profile_names;
+    profile_names.reserve(model.motion_profiles.size());
+    for (const settings::MotionProfile& profile : model.motion_profiles) {
+      profile_names.push_back(profile.name.c_str());
+    }
+    layout.BeginRow(Metrics::kRowHeight);
+    layout.ReserveControl(profile_field_width);
+    layout.RowTitle(window.font_body_, kLabelTextSize, "Saved profile", kPrimaryTextColor);
+    const ImVec2 profile_cursor = layout.ControlCursor(profile_field_width, combo_height);
+    layout.SetCursor(profile_cursor.x, profile_cursor.y);
+    if (Combo(motion, "##motion_profile", "", &window.selected_motion_profile_, profile_names,
+              ImVec2(profile_field_width, combo_height), window.font_small_, window.font_body_,
+              scale, alpha)) {
+      const std::string& selected =
+          model.motion_profiles[static_cast<std::size_t>(window.selected_motion_profile_)].name;
+      std::snprintf(window.motion_profile_name_.data(), window.motion_profile_name_.size(), "%s",
+                    selected.c_str());
+    }
+    layout.EndRow();
+  }
+
+  layout.BeginRow(Metrics::kRowHeightTall);
+  layout.ReserveControl(profile_field_width);
+  layout.RowTitle(window.font_body_, kLabelTextSize, "Profile name", kPrimaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                     "Save the complete timing, curve, style, and quality setup",
+                     kSecondaryTextColor);
+  ImVec2 profile_cursor = layout.ControlCursor(profile_field_width, combo_height);
+  layout.SetCursor(profile_cursor.x, profile_cursor.y);
+  ImGui::SetNextItemWidth(profile_field_width);
+  ImGui::InputText("##motion_profile_name", window.motion_profile_name_.data(),
+                   window.motion_profile_name_.size());
+  layout.EndRow();
+
+  constexpr float kProfileButtonGap = 8.0f;
+  const float profile_button_width = px(92.0f);
+  const float profile_controls_width = profile_button_width * 3.0f + px(kProfileButtonGap * 2.0f);
+  layout.BeginRow(Metrics::kRowHeightTall);
+  layout.ReserveControl(profile_controls_width);
+  layout.RowTitle(window.font_body_, kLabelTextSize,
+                  model.motion_profiles.empty() ? "No saved profiles" : "Profile actions",
+                  kPrimaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                     "Saving an existing name updates that profile", kSecondaryTextColor);
+  const ImVec2 profile_actions = layout.ControlCursor(profile_controls_width, button_height);
+  layout.SetCursor(profile_actions.x, profile_actions.y);
+  if (CompactButton(motion, "##save_motion_profile", "Save",
+                    ImVec2(profile_button_width, button_height), window.font_body_, scale, alpha)) {
+    const bool saved = actions.SaveMotionProfile(window.motion_profile_name_.data());
+    if (saved) {
+      std::string requested_name = window.motion_profile_name_.data();
+      const std::size_t first = requested_name.find_first_not_of(" \t\r\n");
+      const std::size_t last = requested_name.find_last_not_of(" \t\r\n");
+      if (first != std::string::npos)
+        requested_name = requested_name.substr(first, last - first + 1);
+      for (std::size_t index = 0; index < model.motion_profiles.size(); ++index) {
+        if (model.motion_profiles[index].name == requested_name) {
+          window.selected_motion_profile_ = static_cast<int>(index);
+          break;
+        }
+      }
+    }
+    window.RecordSaveResult(saved);
+  }
+
+  std::string selected_profile;
+  if (!model.motion_profiles.empty()) {
+    const int selected = std::clamp(window.selected_motion_profile_, 0,
+                                    static_cast<int>(model.motion_profiles.size()) - 1);
+    selected_profile = model.motion_profiles[static_cast<std::size_t>(selected)].name;
+  }
+  layout.SetCursor(profile_actions.x + profile_button_width + px(kProfileButtonGap),
+                   profile_actions.y);
+  if (CompactButton(motion, "##apply_motion_profile", "Apply",
+                    ImVec2(profile_button_width, button_height), window.font_body_, scale, alpha,
+                    !selected_profile.empty()) &&
+      !selected_profile.empty()) {
+    window.RecordSaveResult(actions.ApplyMotionProfile(selected_profile));
+  }
+  layout.SetCursor(profile_actions.x + (profile_button_width + px(kProfileButtonGap)) * 2.0f,
+                   profile_actions.y);
+  if (CompactButton(motion, "##delete_motion_profile", "Delete",
+                    ImVec2(profile_button_width, button_height), window.font_body_, scale, alpha) &&
+      !selected_profile.empty()) {
+    const bool saved = actions.DeleteMotionProfile(selected_profile);
+    if (saved) {
+      window.selected_motion_profile_ = std::max(0, window.selected_motion_profile_ - 1);
+    }
+    window.RecordSaveResult(saved);
+  }
+  layout.EndRow();
+  layout.EndGroup();
+
   layout.SectionCaption(window.font_small_, kCaptionTextSize, "TIMING");
   layout.BeginGroup();
   layout.BeginStackRow(18.0f, Metrics::kButtonHeight);
@@ -127,9 +228,8 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
       model.restore_duration = restore;
       window.minimize_slider_dirty_ = false;
       window.restore_slider_dirty_ = false;
-      window.RecordSaveResult(
-          actions.SetAnimationDurations(model.minimize_duration, model.restore_duration,
-                                        model.cancel_duration, true));
+      window.RecordSaveResult(actions.SetAnimationDurations(
+          model.minimize_duration, model.restore_duration, model.cancel_duration, true));
     }
     preset_x += preset_width + preset_gap;
   }
@@ -149,14 +249,12 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     if (active && std::abs(proposed - *duration) > 0.0001f) {
       float delta = proposed - *duration;
       if (model.link_speeds) {
-        const float minimum_delta =
-            (std::max)({kMinimumDuration - model.minimize_duration,
-                        kMinimumDuration - model.restore_duration,
-                        kMinimumDuration - model.cancel_duration});
-        const float maximum_delta =
-            (std::min)({kMaximumDuration - model.minimize_duration,
-                        kMaximumDuration - model.restore_duration,
-                        kMaximumDuration - model.cancel_duration});
+        const float minimum_delta = (std::max)({kMinimumDuration - model.minimize_duration,
+                                                kMinimumDuration - model.restore_duration,
+                                                kMinimumDuration - model.cancel_duration});
+        const float maximum_delta = (std::min)({kMaximumDuration - model.minimize_duration,
+                                                kMaximumDuration - model.restore_duration,
+                                                kMaximumDuration - model.cancel_duration});
         delta = std::clamp(delta, minimum_delta, maximum_delta);
         model.minimize_duration += delta;
         model.restore_duration += delta;
@@ -186,8 +284,8 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
   const float cancel_width = layout.ControlMaxWidth(340.0f);
   layout.ReserveControl(cancel_width);
   layout.RowTitle(window.font_body_, kLabelTextSize, "Cancel / reverse", kPrimaryTextColor);
-  layout.RowSubtitle(window.font_small_, kHelperTextSize, "Used when direction changes mid-animation",
-                     kSecondaryTextColor);
+  layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                     "Used when direction changes mid-animation", kSecondaryTextColor);
   ImVec2 cursor = layout.ControlCursor(cancel_width, slider_height);
   layout.SetCursor(cursor.x, cursor.y);
   float cancel_duration = model.cancel_duration;
@@ -197,14 +295,12 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
   if (cancel_active && std::abs(cancel_duration - model.cancel_duration) > 0.0001f) {
     float delta = cancel_duration - model.cancel_duration;
     if (model.link_speeds) {
-      const float minimum_delta =
-          (std::max)({kMinimumDuration - model.minimize_duration,
-                      kMinimumDuration - model.restore_duration,
-                      kMinimumDuration - model.cancel_duration});
-      const float maximum_delta =
-          (std::min)({kMaximumDuration - model.minimize_duration,
-                      kMaximumDuration - model.restore_duration,
-                      kMaximumDuration - model.cancel_duration});
+      const float minimum_delta = (std::max)({kMinimumDuration - model.minimize_duration,
+                                              kMinimumDuration - model.restore_duration,
+                                              kMinimumDuration - model.cancel_duration});
+      const float maximum_delta = (std::min)({kMaximumDuration - model.minimize_duration,
+                                              kMaximumDuration - model.restore_duration,
+                                              kMaximumDuration - model.cancel_duration});
       delta = std::clamp(delta, minimum_delta, maximum_delta);
       model.minimize_duration += delta;
       model.restore_duration += delta;
@@ -332,13 +428,11 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
     layout.SetCursor(layout.content_right() - graph_side,
                      layout.StackControlY() + (layout.StackControlHeight() - graph_height) * 0.5f);
     bool changed = false;
-    const bool active =
-        EasingGraphEditor(motion, "##cancel_bezier_graph", &model.cancel_custom_bezier,
-                          ImVec2(graph_side, graph_height), scale, alpha, &changed,
-                          window.font_small_);
+    const bool active = EasingGraphEditor(
+        motion, "##cancel_bezier_graph", &model.cancel_custom_bezier,
+        ImVec2(graph_side, graph_height), scale, alpha, &changed, window.font_small_);
     DelayedTooltip(
-        "Cancel curve used after reversing direction. Drag handles or type x1, y1, x2, y2.",
-        scale);
+        "Cancel curve used after reversing direction. Drag handles or type x1, y1, x2, y2.", scale);
     if (changed) {
       window.cancel_bezier_dirty_ = true;
       actions.SetCancelCustomBezier(model.cancel_custom_bezier, false);
@@ -389,8 +483,8 @@ void AnimationPage::Render(::minimize::ui::SettingsWindow& window, components::P
   layout.SetCursor(cursor.x, cursor.y);
   float strength = model.minimize_strength;
   const bool strength_active =
-      Slider(motion, "##minimize_strength", "", &strength, 0.25f, 1.0f, strength_width, scale, alpha,
-             window.font_small_, 0.01f, 100.0f, 0, "%");
+      Slider(motion, "##minimize_strength", "", &strength, 0.25f, 1.0f, strength_width, scale,
+             alpha, window.font_small_, 0.01f, 100.0f, 0, "%");
   DelayedTooltip("How strongly the window bends toward the taskbar target.", scale);
   if (strength_active && std::abs(strength - model.minimize_strength) > 0.0001f) {
     model.minimize_strength = strength;
