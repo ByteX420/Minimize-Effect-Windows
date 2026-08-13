@@ -427,6 +427,12 @@ MessageLoopWait ApplicationRuntime::TickRuntime() {
   return MessageLoopWait::kFrame;
 }
 
+void ApplicationRuntime::TickWhileTrayMenuOpen() {
+  UpdateRuntime();
+  settings_window_.Render();
+  (void)TickRuntime();
+}
+
 void ApplicationRuntime::ResetAnimationFramePacing(int run_index, HWND window,
                                                    const RECT& animation_bounds) {
   frame_scheduler_.Reset(runs_[run_index], window, animation_bounds);

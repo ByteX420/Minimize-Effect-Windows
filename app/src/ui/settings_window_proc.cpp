@@ -162,6 +162,12 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
     return 0;
   }
 
+  if (settings != nullptr && message == WM_TIMER && w_param == ui::TrayIcon::kMenuTimerId &&
+      settings->controller_ != nullptr) {
+    settings->controller_->actions().TickWhileTrayMenuOpen();
+    return 0;
+  }
+
   // Client-area dragging keeps the normal message pump running. Returning HTCAPTION would enter
   // the system's modal move loop and freeze active minimize/restore animations.
   if (settings != nullptr) {

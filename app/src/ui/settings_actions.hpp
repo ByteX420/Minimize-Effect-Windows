@@ -82,6 +82,8 @@ public:
   virtual HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                        settings::HotkeyBinding binding) = 0;
   virtual void ExecuteHotkeyAction(settings::HotkeyAction action) = 0;
+  // Keeps runtime animation ticks alive while a native tray menu owns the nested message loop.
+  virtual void TickWhileTrayMenuOpen() = 0;
   [[nodiscard]] virtual features::DiagnosticsSnapshot GetDiagnostics() const = 0;
   virtual bool ExecuteDiagnosticsAction(features::DiagnosticsAction action) = 0;
   virtual void HealWindows() = 0;

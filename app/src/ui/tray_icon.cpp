@@ -178,8 +178,10 @@ TrayCommand TrayIcon::HandleCallback(HWND owner, LPARAM parameter,
   POINT cursor{};
   GetCursorPos(&cursor);
   SetForegroundWindow(owner);
+  SetTimer(owner, kMenuTimerId, 16, nullptr);
   const UINT selected = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_NONOTIFY,
                                        cursor.x, cursor.y, 0, owner, nullptr);
+  KillTimer(owner, kMenuTimerId);
   DestroyMenu(menu);
   if (selected >= kProfileBase &&
       selected < kProfileBase + static_cast<UINT>(view_model.motion_profiles.size())) {

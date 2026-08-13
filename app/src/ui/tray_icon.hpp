@@ -32,6 +32,7 @@ class TrayIcon final {
 public:
   static constexpr UINT kCallbackMessage = WM_APP + 100;
   static constexpr UINT_PTR kRetryTimerId = 1;
+  static constexpr UINT_PTR kMenuTimerId = 2;
 
   void Initialize();
   [[nodiscard]] bool Add(HWND owner, const SettingsViewModel& view_model);

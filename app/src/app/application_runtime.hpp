@@ -99,6 +99,7 @@ public:
   ui::HotkeyUpdateResult SetHotkey(settings::HotkeyAction action,
                                    settings::HotkeyBinding binding) override;
   void ExecuteHotkeyAction(settings::HotkeyAction action) override;
+  void TickWhileTrayMenuOpen() override;
   [[nodiscard]] features::DiagnosticsSnapshot GetDiagnostics() const override;
   bool ExecuteDiagnosticsAction(features::DiagnosticsAction action) override;
   void HealWindows() override { HealLeftoverWindows(); }
