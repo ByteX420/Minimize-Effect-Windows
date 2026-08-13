@@ -37,8 +37,7 @@ RECT MapDesktopRectToView(const RECT& desktop_rect, const RECT& desktop_space, f
   const float origin_x = view_x + (view_w - used_w) * 0.5f;
   const float origin_y = view_y + (view_h - used_h) * 0.5f;
 
-  const float left =
-      origin_x + static_cast<float>(desktop_rect.left - desktop_space.left) * scale;
+  const float left = origin_x + static_cast<float>(desktop_rect.left - desktop_space.left) * scale;
   const float top = origin_y + static_cast<float>(desktop_rect.top - desktop_space.top) * scale;
   const float right =
       origin_x + static_cast<float>(desktop_rect.right - desktop_space.left) * scale;
@@ -58,8 +57,8 @@ RECT MapDesktopRectToView(const RECT& desktop_rect, const RECT& desktop_space, f
 OpenWindowsService::OpenWindowsService(WindowExclusionService& exclusions)
     : exclusions_(exclusions) {}
 
-OpenWindowsSnapshot OpenWindowsService::Capture(HWND overlay_window,
-                                                HWND settings_window) const {
+OpenWindowsSnapshot OpenWindowsService::Capture(HWND overlay_window, HWND settings_window,
+                                                HWND last_active_window) const {
   exclusions_.PruneInvalidWindows();
 
   OpenWindowsSnapshot snapshot{};
@@ -101,7 +100,11 @@ OpenWindowsSnapshot OpenWindowsService::Capture(HWND overlay_window,
         exclusions_.IsDisplayExcluded(snapshot.monitors[i].device_name);
   }
 
-  const HWND foreground = GetForegroundWindow();
+  HWND foreground = GetForegroundWindow();
+  if (foreground == settings_window && last_active_window != nullptr &&
+      IsWindow(last_active_window)) {
+    foreground = last_active_window;
+  }
   for (HWND window : platform::EnumerateTopLevelWindows(overlay_window)) {
     if (window == settings_window) continue;
     if (!platform::IsInterestingTopLevelWindow(window, overlay_window)) continue;

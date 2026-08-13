@@ -1196,7 +1196,8 @@ bool ApplicationRuntime::SetWindowMinimizeExcluded(HWND window, bool excluded) {
 }
 
 features::OpenWindowsSnapshot ApplicationRuntime::GetOpenWindowsSnapshot() {
-  return open_windows_service_.Capture(GetOverlayWindow(), settings_window_.hwnd());
+  return open_windows_service_.Capture(GetOverlayWindow(), settings_window_.hwnd(),
+                                       effect_controller_.last_foreground_window());
 }
 
 bool ApplicationRuntime::FocusOpenWindow(HWND window) {

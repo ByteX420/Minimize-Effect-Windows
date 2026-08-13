@@ -34,15 +34,92 @@ std::string Lowercase(std::string value) {
   return value;
 }
 
+std::string WideToUtf8(std::wstring_view value) {
+  if (value.empty()) return {};
+  const int size = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                                       nullptr, 0, nullptr, nullptr);
+  if (size <= 0) return {};
+  std::string result(static_cast<std::size_t>(size), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), result.data(), size,
+                      nullptr, nullptr);
+  return result;
+}
+
+bool UpdateApplicationExclusion(::minimize::ui::SettingsActions& actions,
+                                std::vector<std::string>& excluded_applications,
+                                const std::string& executable, bool excluded) {
+  if (!actions.SetApplicationExcluded(executable, excluded)) return false;
+  if (!excluded) {
+    std::erase(excluded_applications, executable);
+    return true;
+  }
+  if (std::find(excluded_applications.begin(), excluded_applications.end(), executable) ==
+      excluded_applications.end()) {
+    excluded_applications.push_back(executable);
+  }
+  return true;
+}
+
 }  // namespace
 
-void ApplicationsPage::Render(::minimize::ui::SettingsWindow& window, components::PageLayout& layout,
+void ApplicationsPage::Render(::minimize::ui::SettingsWindow& window,
+                              components::PageLayout& layout,
                               const ::minimize::ui::motion::MotionContext& motion, float scale,
                               float alpha) {
   auto px = [scale](float value) { return value * scale; };
   layout.Title(window.font_title_, kPageTitleTextSize, "Apps", window.font_small_,
                kPageSubtitleTextSize, "Skip the effect for selected programs");
   const ULONGLONG now = GetTickCount64();
+  if (now - window.last_open_windows_refresh_ms_ >= 750 || !window.open_windows_snapshot_valid_) {
+    window.cached_open_windows_ = window.controller_->actions().GetOpenWindowsSnapshot();
+    window.last_open_windows_refresh_ms_ = now;
+    window.open_windows_snapshot_valid_ = true;
+  }
+
+  const features::OpenWindowInfo* active_window = nullptr;
+  for (const features::OpenWindowInfo& info : window.cached_open_windows_.windows) {
+    if (info.foreground) {
+      active_window = &info;
+      break;
+    }
+  }
+
+  layout.SectionCaption(window.font_small_, kCaptionTextSize, "CURRENT WINDOW");
+  layout.BeginGroup();
+  layout.BeginRow(::minimize::ui::theme::Metrics::kRowHeightTall);
+  const float toggle_width = ::minimize::ui::theme::Metrics::kToggleWidth * scale;
+  const float toggle_height = (::minimize::ui::theme::Metrics::kToggleHeight + 4.0f) * scale;
+  layout.ReserveControl(toggle_width);
+  if (active_window == nullptr) {
+    layout.RowTitle(window.font_body_, kLabelTextSize, "No recent application window",
+                    kSecondaryTextColor);
+    layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                       "Focus an app, then open Minimize Effect again", kSecondaryTextColor);
+  } else {
+    const std::string title = WideToUtf8(active_window->title);
+    layout.RowTitle(window.font_body_, kLabelTextSize,
+                    active_window->executable_name.empty() ? "Application"
+                                                           : active_window->executable_name.c_str(),
+                    kPrimaryTextColor);
+    layout.RowSubtitle(window.font_small_, kHelperTextSize,
+                       title.empty() ? "Disable only this window until it closes" : title.c_str(),
+                       kSecondaryTextColor);
+    bool excluded = active_window->minimize_excluded;
+    const ImVec2 toggle_cursor = layout.ControlCursor(toggle_width, toggle_height);
+    layout.SetCursor(toggle_cursor.x, toggle_cursor.y);
+    if (ui::components::Toggle(motion, "##toggle_current_window", &excluded, scale, alpha)) {
+      if (window.controller_->actions().SetWindowMinimizeExcluded(active_window->window,
+                                                                  excluded)) {
+        window.exclusion_error_.clear();
+        window.InvalidateOpenWindowsSnapshot();
+      } else {
+        window.exclusion_error_ = "Could not update the selected window.";
+      }
+    }
+  }
+  layout.EndRow();
+  layout.EndGroup();
+
   if (now - window.last_active_apps_refresh_ms_ > 2000 || window.cached_active_apps_.empty()) {
     window.cached_active_apps_ = window.application_list_provider_.GetActiveApplications();
     window.last_active_apps_refresh_ms_ = now;
@@ -100,8 +177,6 @@ void ApplicationsPage::Render(::minimize::ui::SettingsWindow& window, components
 
   const std::string caption = std::format("{} APPS", filtered.size());
   layout.SectionCaption(window.font_small_, kCaptionTextSize, caption.c_str());
-  const float toggle_width = ::minimize::ui::theme::Metrics::kToggleWidth * scale;
-  const float toggle_height = (::minimize::ui::theme::Metrics::kToggleHeight + 4.0f) * scale;
   layout.BeginGroup();
   if (filtered.empty()) {
     layout.BeginRow(::minimize::ui::theme::Metrics::kRowHeight);
@@ -123,15 +198,10 @@ void ApplicationsPage::Render(::minimize::ui::SettingsWindow& window, components
     const std::string id = std::format("##toggle_exclude_{}", index);
     bool excluded = filtered[index].excluded;
     if (ui::components::Toggle(motion, id.c_str(), &excluded, scale, alpha)) {
-      if (window.controller_->actions().SetApplicationExcluded(filtered[index].name, excluded)) {
+      if (UpdateApplicationExclusion(window.controller_->actions(), excluded_applications,
+                                     filtered[index].name, excluded)) {
         window.exclusion_error_.clear();
-        if (excluded) {
-          if (std::find(excluded_applications.begin(), excluded_applications.end(),
-                        filtered[index].name) == excluded_applications.end())
-            excluded_applications.push_back(filtered[index].name);
-        } else {
-          std::erase(excluded_applications, filtered[index].name);
-        }
+        window.InvalidateOpenWindowsSnapshot();
       } else {
         window.exclusion_error_ = "Could not update exclusion.";
       }

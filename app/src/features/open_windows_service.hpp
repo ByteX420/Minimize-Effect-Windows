@@ -27,7 +27,7 @@ struct OpenMonitorInfo {
   HMONITOR monitor = nullptr;
   RECT bounds{};
   RECT work_area{};
-  int index = 0;  // 0-based; label number = index + 1 (primary is always 1)
+  int index = 0;            // 0-based; label number = index + 1 (primary is always 1)
   std::string label;        // "1", "2", ...
   std::string device_name;  // MONITORINFOEX.szDevice (persisted exclusion key)
   bool is_primary = false;
@@ -49,7 +49,8 @@ public:
   explicit OpenWindowsService(WindowExclusionService& exclusions);
 
   // Refresh enumeration (not every ImGui frame — callers throttle).
-  OpenWindowsSnapshot Capture(HWND overlay_window, HWND settings_window) const;
+  OpenWindowsSnapshot Capture(HWND overlay_window, HWND settings_window,
+                              HWND last_active_window = nullptr) const;
 
 private:
   WindowExclusionService& exclusions_;
