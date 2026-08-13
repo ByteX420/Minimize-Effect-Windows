@@ -68,8 +68,8 @@
       <AdditionalDependencies>user32.lib;dwmapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <PreBuildEvent>
-      <Command>cmd /c "taskkill /IM MinimizeEffect.exe /T /F &gt;nul 2&gt;nul &amp; if exist &quot;$(OutDir)MinimizeEffectHook.dll&quot; ( move /y &quot;$(OutDir)MinimizeEffectHook.dll&quot; &quot;$(OutDir)MinimizeEffectHook.dll.old&quot; &gt;nul 2&gt;nul &amp; del /f /q &quot;$(OutDir)MinimizeEffectHook.dll.old&quot; &gt;nul 2&gt;nul ) &amp; exit /b 0"</Command>
-      <Message>Stopping running MinimizeEffect instance and releasing hook DLL before rebuild...</Message>
+      <Command>cmd /c "taskkill /IM MinimizeEffect.exe /T /F &gt;nul 2&gt;&amp;1 &amp; taskkill /IM E2ETests.exe /T /F &gt;nul 2&gt;&amp;1 &amp; taskkill /IM mspdbsrv.exe /F &gt;nul 2&gt;&amp;1 &amp; del /f /q &quot;$(OutDir)MinimizeEffectHook.dll.*.old&quot; &gt;nul 2&gt;&amp;1 &amp; del /f /q &quot;$(OutDir)MinimizeEffectHook.dll.old&quot; &gt;nul 2&gt;&amp;1 &amp; del /f /q &quot;$(OutDir)MinimizeEffectHook.dll&quot; &gt;nul 2&gt;&amp;1 &amp; if exist &quot;$(OutDir)MinimizeEffectHook.dll&quot; ( move /y &quot;$(OutDir)MinimizeEffectHook.dll&quot; &quot;$(OutDir)MinimizeEffectHook.dll.%RANDOM%_%RANDOM%.old&quot; &gt;nul 2&gt;&amp;1 ) &amp; del /f /q &quot;$(IntDir)$(TargetName).pdb&quot; &gt;nul 2&gt;&amp;1 &amp; if exist &quot;$(IntDir)$(TargetName).pdb&quot; ( move /y &quot;$(IntDir)$(TargetName).pdb&quot; &quot;$(IntDir)$(TargetName).pdb.%RANDOM%.old&quot; &gt;nul 2&gt;&amp;1 ) &amp; exit /b 0"</Command>
+      <Message>Stopping running MinimizeEffect instances and releasing hook DLL/PDB before rebuild...</Message>
     </PreBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">

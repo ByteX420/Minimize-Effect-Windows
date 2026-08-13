@@ -84,15 +84,17 @@ void DrawProgress(motion::MotionSystem& motion_system, const motion::MotionToken
                   float alpha) {
   const float height = 5.0f * scale;
   const ImVec2 maximum(minimum.x + width, minimum.y + height);
-  draw->AddRectFilled(minimum, maximum, IM_COL32(255, 255, 255, static_cast<int>(22.0f * alpha)),
-                      height * 0.5f);
+  theme::DrawSmoothRoundRectFilled(
+      draw, minimum, maximum, IM_COL32(255, 255, 255, static_cast<int>(22.0f * alpha)),
+      height * 0.5f, ImDrawFlags_RoundCornersAll, 16);
   const float displayed =
       motion_system.AnimateValue(motion::MotionKey("update", "download", "progress"),
                                  std::clamp(progress, 0.0f, 1.0f), tokens.spring_soft, 0.0f);
   if (displayed > 0.001f) {
     const ImVec2 fill_max(minimum.x + width * displayed, maximum.y);
-    draw->AddRectFilled(minimum, fill_max,
-                        IM_COL32(233, 233, 239, static_cast<int>(255.0f * alpha)), height * 0.5f);
+    theme::DrawSmoothRoundRectFilled(
+        draw, minimum, fill_max, IM_COL32(233, 233, 239, static_cast<int>(255.0f * alpha)),
+        height * 0.5f, ImDrawFlags_RoundCornersAll, 16);
   }
 }
 

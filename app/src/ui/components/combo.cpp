@@ -105,10 +105,11 @@ bool RenderComboItem(const ComboItemRenderContext& context, int index, int* curr
 
   if ((item_hover > 0.001f || select_amt > 0.001f) && row_reveal > 0.04f) {
     const float fill = (0.10f * select_amt + 0.05f * item_hover * (1.0f - select_amt)) * row_reveal;
-    popup_draw->AddRectFilled(
-        ImVec2(item_min.x + pad_x, item_min.y + pad_y),
+    theme::DrawSmoothRoundRectFilled(
+        popup_draw, ImVec2(item_min.x + pad_x, item_min.y + pad_y),
         ImVec2(item_min.x + frame_width - pad_x, item_min.y + row_height - pad_y),
-        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill * alpha)), 6.0f * scale);
+        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill * alpha)), 6.0f * scale,
+        ImDrawFlags_RoundCornersAll, 16);
   }
 
   const float check_alpha =
@@ -268,13 +269,15 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
 
   // While open, the field and list form one shell with a single outside border.
   if (!connected) {
-    draw->AddRectFilled(frame_min, frame_max, frame_bg_u32, rounding, ImDrawFlags_RoundCornersAll);
-    draw->AddRect(frame_min, frame_max, frame_border_u32, rounding, ImDrawFlags_RoundCornersAll,
-                  th);
+    theme::DrawSmoothRoundRectFilled(draw, frame_min, frame_max, frame_bg_u32, rounding,
+                                     ImDrawFlags_RoundCornersAll, 16);
+    theme::DrawSmoothRoundRectOutline(draw, frame_min, frame_max, frame_border_u32, rounding, th,
+                                      ImDrawFlags_RoundCornersAll, 16);
   } else {
     const ImDrawFlags field_corners =
         opens_upward ? ImDrawFlags_RoundCornersBottom : ImDrawFlags_RoundCornersTop;
-    draw->AddRectFilled(frame_min, frame_max, frame_bg_u32, rounding, field_corners);
+    theme::DrawSmoothRoundRectFilled(draw, frame_min, frame_max, frame_bg_u32, rounding,
+                                     field_corners, 16);
   }
 
   bool changed = false;
@@ -317,7 +320,8 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
           opens_upward ? ImDrawFlags_RoundCornersTop : ImDrawFlags_RoundCornersBottom;
       const float list_r =
           std::min(shell_r, std::max(1.0f, (popup_max.y - popup_min.y) * 0.5f - 0.5f));
-      popup_draw->AddRectFilled(popup_min, popup_max, body_u32, list_r, list_corners);
+      theme::DrawSmoothRoundRectFilled(popup_draw, popup_min, popup_max, body_u32, list_r,
+                                       list_corners, 16);
       // Bridge the field/list seam, then draw one outline around the combined shell.
       const float seam = 2.0f * scale;
       if (opens_upward) {
@@ -327,8 +331,8 @@ bool Combo(const MotionContext& motion_context, const char* id, const char* labe
         popup_draw->AddRectFilled(ImVec2(popup_min.x, popup_min.y - seam),
                                   ImVec2(popup_max.x, popup_min.y + seam), body_u32);
       }
-      ImGui::GetForegroundDrawList()->AddRect(shell_min, shell_max, border_u32, shell_r,
-                                              ImDrawFlags_RoundCornersAll, th);
+      theme::DrawSmoothRoundRectOutline(ImGui::GetForegroundDrawList(), shell_min, shell_max,
+                                        border_u32, shell_r, th, ImDrawFlags_RoundCornersAll, 16);
 
       popup_draw->PushClipRect(popup_min, popup_max, true);
 

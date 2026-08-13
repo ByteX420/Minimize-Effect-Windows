@@ -22,9 +22,6 @@
     <Filter Include="src\features">
       <UniqueIdentifier>{fa006fa0-008e-6f2e-702e-7cbdeac0a52b}</UniqueIdentifier>
     </Filter>
-    <Filter Include="src\platform\windows">
-      <UniqueIdentifier>{dc293531-a529-9018-da5a-046319d9008c}</UniqueIdentifier>
-    </Filter>
     <Filter Include="src\rendering">
       <UniqueIdentifier>{5bfe3a55-9a03-a056-d458-c5ebd0ff3fa6}</UniqueIdentifier>
     </Filter>
@@ -51,15 +48,6 @@
     </Filter>
     <Filter Include="src\ui\theme">
       <UniqueIdentifier>{fb65e864-694c-8128-51b0-76f201b0cce9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\imgui">
-      <UniqueIdentifier>{ee653734-f8d6-cfe2-300a-3a4a85785d73}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\imgui\backends">
-      <UniqueIdentifier>{05922519-3001-1518-551a-03c0d51995a4}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="third_party\imgui\misc\freetype">
-      <UniqueIdentifier>{dd62edba-8fc2-6278-7d7c-ba970cf42a67}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -134,57 +122,6 @@
     </ClCompile>
     <ClCompile Include="src\pch.cpp">
       <Filter>src</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\app_container_permissions.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\cbt_hook_manager.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\display_info.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\global_hotkey_manager.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\native_animation_blocker.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\power_status.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\process_info.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\process_runtime.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\single_instance_guard.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\startup_manager.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\update_installer.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\taskbar_locator.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\taskbar_target_provider.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\window_diagnostics.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\window_event_monitor.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\window_properties.cpp">
-      <Filter>src\platform\windows</Filter>
-    </ClCompile>
-    <ClCompile Include="src\platform\windows\window_state.cpp">
-      <Filter>src\platform\windows</Filter>
     </ClCompile>
     <ClCompile Include="src\rendering\animation_renderer.cpp">
       <Filter>src\rendering</Filter>
@@ -327,27 +264,35 @@
     <ClCompile Include="src\ui\update_presenter.cpp">
       <Filter>src\ui</Filter>
     </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui.cpp">
-      <Filter>third_party\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_draw.cpp">
-      <Filter>third_party\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_tables.cpp">
-      <Filter>third_party\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\imgui_widgets.cpp">
-      <Filter>third_party\imgui</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\backends\imgui_impl_dx11.cpp">
-      <Filter>third_party\imgui\backends</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\backends\imgui_impl_win32.cpp">
-      <Filter>third_party\imgui\backends</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\imgui\misc\freetype\imgui_freetype.cpp">
-      <Filter>third_party\imgui\misc\freetype</Filter>
-    </ClCompile>
+    <ClCompile Include="third_party\miniz\miniz.c" />
+    <ClCompile Include="third_party\miniz\miniz_tdef.c" />
+    <ClCompile Include="third_party\miniz\miniz_tinfl.c" />
+    <ClCompile Include="third_party\miniz\miniz_zip.c" />
+    <ClCompile Include="src\platform\windows\app_container_permissions.cpp" />
+    <ClCompile Include="src\platform\windows\cbt_hook_manager.cpp" />
+    <ClCompile Include="src\platform\windows\display_info.cpp" />
+    <ClCompile Include="src\platform\windows\global_hotkey_manager.cpp" />
+    <ClCompile Include="src\platform\windows\native_animation_blocker.cpp" />
+    <ClCompile Include="src\platform\windows\power_status.cpp" />
+    <ClCompile Include="src\platform\windows\process_info.cpp" />
+    <ClCompile Include="src\platform\windows\process_runtime.cpp" />
+    <ClCompile Include="src\platform\windows\single_instance_guard.cpp" />
+    <ClCompile Include="src\platform\windows\startup_manager.cpp" />
+    <ClCompile Include="src\platform\windows\update_installer.cpp" />
+    <ClCompile Include="src\platform\windows\taskbar_locator.cpp" />
+    <ClCompile Include="src\platform\windows\taskbar_target_provider.cpp" />
+    <ClCompile Include="src\platform\windows\window_diagnostics.cpp" />
+    <ClCompile Include="src\platform\windows\window_event_monitor.cpp" />
+    <ClCompile Include="src\platform\windows\window_properties.cpp" />
+    <ClCompile Include="src\platform\windows\window_state.cpp" />
+    <ClCompile Include="src\ui\pages\stress_test_page.cpp" />
+    <ClCompile Include="third_party\imgui\imgui.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_draw.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_tables.cpp" />
+    <ClCompile Include="third_party\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="third_party\imgui\misc\freetype\imgui_freetype.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_dx11.cpp" />
+    <ClCompile Include="third_party\imgui\backends\imgui_impl_win32.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\animation\easing.hpp">
@@ -424,57 +369,6 @@
     </ClInclude>
     <ClInclude Include="src\pch.hpp">
       <Filter>src</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\app_container_permissions.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\cbt_hook_manager.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\display_info.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\global_hotkey_manager.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\native_animation_blocker.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\power_status.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\process_info.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\process_runtime.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\single_instance_guard.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\startup_manager.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\update_installer.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\taskbar_locator.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\taskbar_target_provider.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\window_diagnostics.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\window_event_monitor.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\window_properties.hpp">
-      <Filter>src\platform\windows</Filter>
-    </ClInclude>
-    <ClInclude Include="src\platform\windows\window_state.hpp">
-      <Filter>src\platform\windows</Filter>
     </ClInclude>
     <ClInclude Include="src\rendering\animation_renderer.hpp">
       <Filter>src\rendering</Filter>
@@ -632,33 +526,32 @@
     <ClInclude Include="src\ui\update_presenter.hpp">
       <Filter>src\ui</Filter>
     </ClInclude>
-    <ClInclude Include="third_party\imgui\backends\imgui_impl_dx11.h">
-      <Filter>third_party\imgui\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\backends\imgui_impl_win32.h">
-      <Filter>third_party\imgui\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imconfig.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imgui.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imgui_extra.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imgui_internal.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imstb_rectpack.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imstb_textedit.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\imgui\imstb_truetype.h">
-      <Filter>third_party\imgui</Filter>
-    </ClInclude>
+    <ClInclude Include="src\platform\windows\app_container_permissions.hpp" />
+    <ClInclude Include="src\platform\windows\cbt_hook_manager.hpp" />
+    <ClInclude Include="src\platform\windows\display_info.hpp" />
+    <ClInclude Include="src\platform\windows\global_hotkey_manager.hpp" />
+    <ClInclude Include="src\platform\windows\native_animation_blocker.hpp" />
+    <ClInclude Include="src\platform\windows\power_status.hpp" />
+    <ClInclude Include="src\platform\windows\process_info.hpp" />
+    <ClInclude Include="src\platform\windows\process_runtime.hpp" />
+    <ClInclude Include="src\platform\windows\single_instance_guard.hpp" />
+    <ClInclude Include="src\platform\windows\startup_manager.hpp" />
+    <ClInclude Include="src\platform\windows\update_installer.hpp" />
+    <ClInclude Include="src\platform\windows\taskbar_locator.hpp" />
+    <ClInclude Include="src\platform\windows\taskbar_target_provider.hpp" />
+    <ClInclude Include="src\platform\windows\window_diagnostics.hpp" />
+    <ClInclude Include="src\platform\windows\window_event_monitor.hpp" />
+    <ClInclude Include="src\platform\windows\window_properties.hpp" />
+    <ClInclude Include="src\platform\windows\window_state.hpp" />
+    <ClInclude Include="third_party\imgui\imconfig.h" />
+    <ClInclude Include="third_party\imgui\imgui.h" />
+    <ClInclude Include="third_party\imgui\imgui_extra.h" />
+    <ClInclude Include="third_party\imgui\imgui_internal.h" />
+    <ClInclude Include="third_party\imgui\imstb_rectpack.h" />
+    <ClInclude Include="third_party\imgui\imstb_textedit.h" />
+    <ClInclude Include="third_party\imgui\imstb_truetype.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_dx11.h" />
+    <ClInclude Include="third_party\imgui\backends\imgui_impl_win32.h" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="MinimizeEffect.rc">
@@ -666,11 +559,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="third_party\imgui\imgui_demo.cpp">
-      <Filter>third_party\imgui</Filter>
-    </None>
     <None Include="shaders\genie_mesh.hlsl">
       <Filter>shaders</Filter>
     </None>
+    <None Include="third_party\imgui\imgui_demo.cpp" />
+    <None Include="shaders\compile.ps1" />
   </ItemGroup>
 </Project>

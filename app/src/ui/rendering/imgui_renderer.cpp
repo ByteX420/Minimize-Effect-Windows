@@ -150,7 +150,8 @@ bool ImguiRenderer::ready() const {
 bool ImguiRenderer::CreateDeviceResources() {
   constexpr D3D_FEATURE_LEVEL levels[] = {D3D_FEATURE_LEVEL_11_0};
   D3D_FEATURE_LEVEL level{};
-  HRESULT result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, 0, levels, 1,
+  HRESULT result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                     D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 1,
                                      D3D11_SDK_VERSION, &device_, &level, &context_);
   if (FAILED(result)) return false;
 
@@ -162,23 +163,40 @@ bool ImguiRenderer::CreateDeviceResources() {
     return false;
   }
 
+  RECT client_rect{};
+  if (!GetClientRect(window_, &client_rect) || client_rect.right <= client_rect.left ||
+      client_rect.bottom <= client_rect.top) {
+    return false;
+  }
+
   DXGI_SWAP_CHAIN_DESC1 desc{};
-  desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+  desc.Width = static_cast<UINT>(client_rect.right - client_rect.left);
+  desc.Height = static_cast<UINT>(client_rect.bottom - client_rect.top);
+  desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
   desc.SampleDesc.Count = 1;
   desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
   desc.BufferCount = 2;
   desc.Scaling = DXGI_SCALING_STRETCH;
-  desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-  desc.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
+  desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+  desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
   desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain;
-  result = factory->CreateSwapChainForHwnd(device_.Get(), window_, &desc, nullptr, nullptr,
-                                           &swap_chain);
+  result = factory->CreateSwapChainForComposition(device_.Get(), &desc, nullptr, &swap_chain);
   if (FAILED(result)) return false;
   swap_chain_ = swap_chain;
   swap_chain_flags_ = desc.Flags;
-  factory->MakeWindowAssociation(window_, DXGI_MWA_NO_ALT_ENTER);
+
+  result = DCompositionCreateDevice(dxgi_device.Get(), IID_PPV_ARGS(&composition_device_));
+  if (FAILED(result)) return false;
+  result = composition_device_->CreateTargetForHwnd(window_, TRUE, &composition_target_);
+  if (FAILED(result)) return false;
+  result = composition_device_->CreateVisual(&composition_visual_);
+  if (FAILED(result) || FAILED(composition_visual_->SetContent(swap_chain_.Get())) ||
+      FAILED(composition_target_->SetRoot(composition_visual_.Get())) ||
+      FAILED(composition_device_->Commit())) {
+    return false;
+  }
 
   Microsoft::WRL::ComPtr<IDXGISwapChain2> swap_chain2;
   if (SUCCEEDED(swap_chain_.As(&swap_chain2)) &&
@@ -205,6 +223,13 @@ void ImguiRenderer::ReleaseDeviceResources() {
     context_->ClearState();
   }
   render_target_view_.Reset();
+  if (composition_target_ != nullptr) {
+    composition_target_->SetRoot(nullptr);
+    if (composition_device_ != nullptr) composition_device_->Commit();
+  }
+  composition_visual_.Reset();
+  composition_target_.Reset();
+  composition_device_.Reset();
   frame_latency_waitable_object_ = nullptr;
   swap_chain_flags_ = 0;
   swap_chain_.Reset();

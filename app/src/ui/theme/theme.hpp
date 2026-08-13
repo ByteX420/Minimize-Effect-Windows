@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <cmath>
 
@@ -15,7 +15,7 @@ namespace minimize::ui::theme {
 struct Metrics final {
   static constexpr float kWindowWidth = 800.0f;
   static constexpr float kWindowHeight = 580.0f;
-  static constexpr float kWindowRounding = 12.0f;
+  static constexpr float kWindowRounding = 16.0f;
   static constexpr float kTitlebarHeight = 46.0f;
 
   static constexpr float kSidebarWidth = 172.0f;
@@ -42,8 +42,8 @@ struct Metrics final {
   static constexpr float kMainInset = kPageInset;
   static constexpr float kMainTop = 48.0f;
   static constexpr float kCardWidth = 600.0f;
-  static constexpr float kCardRounding = 14.0f;
-  static constexpr float kControlRounding = 10.0f;
+  static constexpr float kCardRounding = 10.0f;
+  static constexpr float kControlRounding = 8.0f;
   static constexpr float kCardSpacing = kGroupSpacing;
 
   // Standard rows (label | control side-by-side).
@@ -122,6 +122,15 @@ enum class TrafficLightAction {
 void ApplyStyle(float scale);
 void DrawGradientShadow(ImDrawList* draw, ImVec2 min, ImVec2 max, float radius, float alpha,
                         float scale);
+void PathSmoothRoundRect(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding,
+                         ImDrawFlags flags = ImDrawFlags_RoundCornersAll, int segments = 16);
+void DrawSmoothRoundRectFilled(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 col, float rounding,
+                               ImDrawFlags flags = ImDrawFlags_RoundCornersAll, int segments = 16);
+void DrawSmoothRoundRectOutline(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 col, float rounding,
+                                float stroke = 1.0f, ImDrawFlags flags = ImDrawFlags_RoundCornersAll,
+                                int segments = 16);
+void DrawWindowOutline(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding, float scale,
+                       float alpha = 1.0f);
 void DrawCard(ImDrawList* draw, ImVec2 min, ImVec2 max, float scale, float alpha = 1.0f);
 void DrawSeparator(ImDrawList* draw, ImVec2 min, ImVec2 max, float alpha = 1.0f);
 TrafficLightAction DrawTrafficLights(const motion::MotionContext& motion, ImVec2 window_origin,

@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "ui/pages/displays_page.hpp"
 
@@ -101,10 +101,12 @@ void DisplaysPage::Render(::minimize::ui::SettingsWindow& window, components::Pa
   const ImVec2 map_max(map_min.x + content_w, map_min.y + map_h);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   const float map_round = px(10.0f);
-  draw->AddRectFilled(map_min, map_max, IM_COL32(16, 16, 18, static_cast<int>(230 * alpha)),
-                      map_round);
-  draw->AddRect(map_min, map_max, IM_COL32(42, 42, 46, static_cast<int>(255 * alpha)), map_round, 0,
-                std::max(1.0f, scale));
+  theme::DrawSmoothRoundRectFilled(
+      draw, map_min, map_max, IM_COL32(16, 16, 18, static_cast<int>(230 * alpha)), map_round,
+      ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectOutline(
+      draw, map_min, map_max, IM_COL32(42, 42, 46, static_cast<int>(255 * alpha)), map_round,
+      std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
 
   const float pad = px(14.0f);
   const float inner_x = map_min.x + pad;
@@ -174,17 +176,13 @@ void DisplaysPage::Render(::minimize::ui::SettingsWindow& window, components::Pa
   }
 
   auto draw_fill = [&](const MonitorDraw& item) {
-    draw->AddRectFilled(item.box0, item.box1, item.fill, corner);
+    theme::DrawSmoothRoundRectFilled(draw, item.box0, item.box1, item.fill, corner,
+                                     ImDrawFlags_RoundCornersAll, 16);
   };
   auto draw_inline_outline = [&](const MonitorDraw& item) {
-    // Stroke is centered on the path — inset by half thickness so the whole stroke is inside.
-    const float inset = outline_thickness * 0.5f;
-    const ImVec2 stroke0(item.box0.x + inset, item.box0.y + inset);
-    const ImVec2 stroke1(item.box1.x - inset, item.box1.y - inset);
-    if (stroke1.x <= stroke0.x || stroke1.y <= stroke0.y) return;
-    const float stroke_round = std::max(0.0f, corner - inset);
     draw->PushClipRect(item.box0, item.box1, true);
-    draw->AddRect(stroke0, stroke1, item.border, stroke_round, 0, outline_thickness);
+    theme::DrawSmoothRoundRectOutline(draw, item.box0, item.box1, item.border, corner,
+                                      outline_thickness, ImDrawFlags_RoundCornersAll, 16);
     draw->PopClipRect();
   };
 

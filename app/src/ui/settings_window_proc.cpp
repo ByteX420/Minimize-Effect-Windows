@@ -319,8 +319,39 @@ LRESULT CALLBACK SettingsWindow::WindowProc(HWND hwnd, UINT message, WPARAM w_pa
     case WM_CLOSE:
       if (settings != nullptr) settings->HandleCloseRequest();
       return 0;
-    case WM_NCHITTEST:
+    case WM_NCHITTEST: {
+      if (settings != nullptr && IsZoomed(hwnd) == FALSE) {
+        POINT pt{static_cast<short>(LOWORD(l_param)), static_cast<short>(HIWORD(l_param))};
+        ScreenToClient(hwnd, &pt);
+        RECT rc{};
+        GetClientRect(hwnd, &rc);
+        const int w = rc.right - rc.left;
+        const int h = rc.bottom - rc.top;
+        const float radius = theme::Metrics::kWindowRounding * settings->ui_scale_;
+        if (radius > 1.0f && w > 0 && h > 0) {
+          const float x = static_cast<float>(pt.x);
+          const float y = static_cast<float>(pt.y);
+          if (x < radius && y < radius) {
+            const float dx = radius - x;
+            const float dy = radius - y;
+            if (dx * dx + dy * dy > radius * radius) return HTTRANSPARENT;
+          } else if (x >= static_cast<float>(w) - radius && y < radius) {
+            const float dx = x - (static_cast<float>(w) - radius);
+            const float dy = radius - y;
+            if (dx * dx + dy * dy > radius * radius) return HTTRANSPARENT;
+          } else if (x < radius && y >= static_cast<float>(h) - radius) {
+            const float dx = radius - x;
+            const float dy = y - (static_cast<float>(h) - radius);
+            if (dx * dx + dy * dy > radius * radius) return HTTRANSPARENT;
+          } else if (x >= static_cast<float>(w) - radius && y >= static_cast<float>(h) - radius) {
+            const float dx = x - (static_cast<float>(w) - radius);
+            const float dy = y - (static_cast<float>(h) - radius);
+            if (dx * dx + dy * dy > radius * radius) return HTTRANSPARENT;
+          }
+        }
+      }
       return HTCLIENT;
+    }
     default:
       return DefWindowProcW(hwnd, message, w_param, l_param);
   }

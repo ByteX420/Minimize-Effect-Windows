@@ -56,7 +56,8 @@ void SettingsShell::Render(SettingsWindow& window) {
   ImGui::SetNextWindowSize(window_size);
   constexpr ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                      ImGuiWindowFlags_NoSavedSettings |
-                                     ImGuiWindowFlags_NoBringToFrontOnFocus;
+                                     ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                     ImGuiWindowFlags_NoBackground;
   ImGui::Begin("MinimizeEffectRoot", nullptr, flags);
   ImDrawList* draw = ImGui::GetWindowDrawList();
   const ImVec2 window_origin = ImGui::GetWindowPos();
@@ -69,23 +70,26 @@ void SettingsShell::Render(SettingsWindow& window) {
   // Shell: compact rail + solid content pane (outer radius matches DWM round corners).
   const float shell_round = px(theme::Metrics::kWindowRounding);
   ImVec4 main_background = ui::theme::kMainColor;
-  main_background.w *= window_alpha;
-  draw->AddRectFilled(window_point(sidebar_width, 0.0f), window_point(window_size.x, window_size.y),
-                      ImGui::GetColorU32(main_background), shell_round,
-                      ImDrawFlags_RoundCornersRight);
+  // DirectComposition uses the render-target alpha as real desktop transparency. The shell
+  // itself must therefore stay opaque; only the pixels outside these rounded fills are clear.
+  main_background.w = 1.0f;
+  theme::DrawSmoothRoundRectFilled(draw, window_point(sidebar_width, 0.0f),
+                                  window_point(window_size.x, window_size.y),
+                                  ImGui::GetColorU32(main_background), shell_round,
+                                  ImDrawFlags_RoundCornersRight, 16);
   ImVec4 sidebar_background = ui::theme::kSidebarColor;
-  sidebar_background.w *= window_alpha;
-  draw->AddRectFilled(window_origin, window_point(sidebar_width, window_size.y),
-                      ImGui::GetColorU32(sidebar_background), shell_round,
-                      ImDrawFlags_RoundCornersLeft);
+  sidebar_background.w = 1.0f;
+  theme::DrawSmoothRoundRectFilled(draw, window_origin, window_point(sidebar_width, window_size.y),
+                                  ImGui::GetColorU32(sidebar_background), shell_round,
+                                  ImDrawFlags_RoundCornersLeft, 16);
   draw->AddLine(window_point(sidebar_width, 0.0f), window_point(sidebar_width, window_size.y),
                 WithAlpha(theme::kBorder, content_alpha * 0.45f));
   if (update_workspace_active || shell_content < 0.999f) {
     const float workspace_base_alpha = window_alpha * (1.0f - shell_content);
-    draw->AddRectFilled(window_origin, window_point(window_size.x, window_size.y),
-                        IM_COL32(20, 20, 22,
-                                 static_cast<int>(255.0f * workspace_base_alpha)),
-                        shell_round);
+    theme::DrawSmoothRoundRectFilled(draw, window_origin, window_point(window_size.x, window_size.y),
+                                    IM_COL32(20, 20, 22,
+                                             static_cast<int>(255.0f * workspace_base_alpha)),
+                                    shell_round, ImDrawFlags_RoundCornersAll, 16);
   }
 
   // Brand under traffic lights — same left inset as nav.
@@ -155,9 +159,10 @@ void SettingsShell::Render(SettingsWindow& window) {
     const float pill_rounding = 8.0f * scale;
     const ImVec2 pill_min = window_point(nav_x, nav_base_y + select_y);
     const ImVec2 pill_max(pill_min.x + nav_w, pill_min.y + nav_h);
-    draw->AddRectFilled(pill_min, pill_max,
-                        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.10f * content_alpha)),
-                        pill_rounding);
+    theme::DrawSmoothRoundRectFilled(
+        draw, pill_min, pill_max,
+        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.10f * content_alpha)), pill_rounding,
+        ImDrawFlags_RoundCornersAll, 16);
   }
 
   for (size_t index = 0; index < pages.size(); ++index) {
@@ -211,8 +216,9 @@ void SettingsShell::Render(SettingsWindow& window) {
     const ImVec2 chip_max(chip_min.x + chip_w, chip_min.y + chip_h);
     const float chip_round = chip_h * 0.5f;
     const float a = content_alpha * status_reveal;
-    draw->AddRectFilled(chip_min, chip_max, IM_COL32(255, 255, 255, static_cast<int>(12.0f * a)),
-                        chip_round);
+    theme::DrawSmoothRoundRectFilled(
+        draw, chip_min, chip_max, IM_COL32(255, 255, 255, static_cast<int>(12.0f * a)),
+        chip_round, ImDrawFlags_RoundCornersAll, 16);
     draw->AddText(status_font, status_sz,
                   ImVec2(std::floor(chip_min.x + chip_pad_x + 0.5f),
                          theme::CenteredTextTop(status_font, chip_min.y, chip_h)),
@@ -434,8 +440,10 @@ void SettingsShell::Render(SettingsWindow& window) {
     const float grab_alpha = (0.16f + 0.14f * hover_amt) * content_alpha;
     // FG list: above page content + scroll fades; still clipped by the HWND/DWM round.
     ImDrawList* fg = ImGui::GetForegroundDrawList();
-    fg->AddRectFilled(live_grab_min, live_grab_max,
-                      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, grab_alpha)), bar_w * 0.5f);
+    theme::DrawSmoothRoundRectFilled(
+        fg, live_grab_min, live_grab_max,
+        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, grab_alpha)), bar_w * 0.5f,
+        ImDrawFlags_RoundCornersAll, 16);
   }
 
   ImGui::EndChild();
@@ -482,15 +490,18 @@ void SettingsShell::Render(SettingsWindow& window) {
       const float a = content_alpha * show;
 
       ImDrawList* fg = ImGui::GetForegroundDrawList();
-      fg->AddRectFilled(ImVec2(toast_min.x, toast_min.y + px(1.5f)),
-                        ImVec2(toast_max.x, toast_max.y + px(1.5f)),
-                        IM_COL32(0, 0, 0, static_cast<int>(70.0f * a)), rounding);
-      fg->AddRectFilled(toast_min, toast_max, IM_COL32(28, 28, 30, static_cast<int>(250.0f * a)),
-                        rounding);
-      fg->AddRect(toast_min, toast_max,
-                  IM_COL32(is_error ? 90 : 52, is_error ? 40 : 52, is_error ? 42 : 55,
-                           static_cast<int>(255.0f * a)),
-                  rounding, 0, std::max(1.0f, scale));
+      theme::DrawSmoothRoundRectFilled(
+          fg, ImVec2(toast_min.x, toast_min.y + px(1.5f)),
+          ImVec2(toast_max.x, toast_max.y + px(1.5f)),
+          IM_COL32(0, 0, 0, static_cast<int>(70.0f * a)), rounding, ImDrawFlags_RoundCornersAll, 16);
+      theme::DrawSmoothRoundRectFilled(
+          fg, toast_min, toast_max, IM_COL32(28, 28, 30, static_cast<int>(250.0f * a)),
+          rounding, ImDrawFlags_RoundCornersAll, 16);
+      theme::DrawSmoothRoundRectOutline(
+          fg, toast_min, toast_max,
+          IM_COL32(is_error ? 90 : 52, is_error ? 40 : 52, is_error ? 42 : 55,
+                   static_cast<int>(255.0f * a)),
+          rounding, std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
 
       float text_x = toast_min.x + pad_x;
       if (!is_error) {
@@ -531,6 +542,12 @@ void SettingsShell::Render(SettingsWindow& window) {
     case theme::TrafficLightAction::kNone:
       break;
   }
+
+  // Apple macOS native window outline: 1px frosted glass perimeter stroke with top specular highlight.
+  theme::DrawWindowOutline(ImGui::GetForegroundDrawList(), window_origin,
+                           window_point(window_size.x, window_size.y), shell_round, scale,
+                           window_alpha);
+
   ImGui::End();
 }
 

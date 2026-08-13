@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "ui/components/controls.hpp"
 
@@ -57,13 +57,15 @@ bool ReferenceButton(const MotionContext& motion_context, const char* id, const 
   const float rounding =
       std::min(Metrics::kControlRounding * (size.y / 34.0f), size.y * 0.35f) * visual_scale;
   ImDrawList* draw = ImGui::GetWindowDrawList();
-  draw->AddRectFilled(visual_min, visual_max, ImGui::GetColorU32(background), rounding);
+  theme::DrawSmoothRoundRectFilled(draw, visual_min, visual_max, ImGui::GetColorU32(background),
+                                   rounding, ImDrawFlags_RoundCornersAll, 16);
   ImVec4 border =
       detail::MixColor(ImVec4(0.20f, 0.20f, 0.22f, 1.0f), ImVec4(0.48f, 0.48f, 0.52f, 1.0f),
                        selected * 0.75f + hover * 0.25f * (1.0f - selected));
   border.w *= alpha;
-  draw->AddRect(visual_min, visual_max, ImGui::GetColorU32(border), rounding, 0,
-                std::max(1.0f, size.y / 30.0f));
+  theme::DrawSmoothRoundRectOutline(draw, visual_min, visual_max, ImGui::GetColorU32(border),
+                                    rounding, std::max(1.0f, size.y / 30.0f),
+                                    ImDrawFlags_RoundCornersAll, 16);
 
   const float font_size = font->FontSize;
   ImVec2 text_size = font->CalcTextSizeA(font_size, FLT_MAX, 0.0f, label);
@@ -141,14 +143,16 @@ bool Toggle(const MotionContext& motion, const char* id, bool* value, float scal
       hover * 0.5f);
 
   ImDrawList* draw = ImGui::GetWindowDrawList();
-  draw->AddRectFilled(track_min, track_max, ImGui::GetColorU32(track_color), track_rounding);
+  theme::DrawSmoothRoundRectFilled(draw, track_min, track_max, ImGui::GetColorU32(track_color),
+                                   track_rounding, ImDrawFlags_RoundCornersAll, 16);
   // Soft rim keeps the pill edged against dark cards.
   {
     ImVec4 rim =
         detail::MixColor(ImVec4(0.28f, 0.28f, 0.30f, alpha), ImVec4(0.62f, 0.62f, 0.66f, alpha), t);
     rim.w *= 0.9f + 0.1f * hover;
-    draw->AddRect(track_min, track_max, ImGui::GetColorU32(rim), track_rounding, 0,
-                  std::max(1.0f, scale));
+    theme::DrawSmoothRoundRectOutline(draw, track_min, track_max, ImGui::GetColorU32(rim),
+                                      track_rounding, std::max(1.0f, scale),
+                                      ImDrawFlags_RoundCornersAll, 16);
   }
 
   // White knob + dark contact shadow — high contrast on both OFF and ON tracks.
@@ -161,15 +165,20 @@ bool Toggle(const MotionContext& motion, const char* id, bool* value, float scal
   const float rx = std::min(knob_r + squash * 2.4f * scale, knob_r + travel * 0.22f);
   const float ry = std::max(2.2f * scale, knob_r - squash * 1.35f * scale);
   const float knob_y = center_y + press * 0.4f * scale;
-  draw->AddRectFilled(ImVec2(knob_x - rx, knob_y - ry + 1.0f * scale),
-                      ImVec2(knob_x + rx, knob_y + ry + 1.0f * scale),
-                      ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.35f * alpha)), ry);
-  draw->AddRectFilled(ImVec2(knob_x - rx, knob_y - ry), ImVec2(knob_x + rx, knob_y + ry),
-                      ImGui::GetColorU32(ImVec4(0.97f, 0.97f, 0.98f, alpha)), ry);
+  theme::DrawSmoothRoundRectFilled(
+      draw, ImVec2(knob_x - rx, knob_y - ry + 1.0f * scale),
+      ImVec2(knob_x + rx, knob_y + ry + 1.0f * scale),
+      ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.35f * alpha)), ry,
+      ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectFilled(draw, ImVec2(knob_x - rx, knob_y - ry),
+                                   ImVec2(knob_x + rx, knob_y + ry),
+                                   ImGui::GetColorU32(ImVec4(0.97f, 0.97f, 0.98f, alpha)), ry,
+                                   ImDrawFlags_RoundCornersAll, 16);
   // Thin graphite ring so the disc never blends into a mid-gray ON track.
-  draw->AddRect(ImVec2(knob_x - rx, knob_y - ry), ImVec2(knob_x + rx, knob_y + ry),
-                ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.18f * alpha)), ry, 0,
-                std::max(1.0f, scale));
+  theme::DrawSmoothRoundRectOutline(draw, ImVec2(knob_x - rx, knob_y - ry),
+                                    ImVec2(knob_x + rx, knob_y + ry),
+                                    ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.18f * alpha)), ry,
+                                    std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
   return changed;
 }
 
@@ -326,13 +335,15 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   const float track_rounding = track_h * 0.5f;
   const float rail_left = origin.x;
   const float rail_right = track_end;
-  draw->AddRectFilled(ImVec2(rail_left, track_y - track_h * 0.5f),
-                      ImVec2(rail_right, track_y + track_h * 0.5f),
-                      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.06f * alpha)), track_rounding);
+  theme::DrawSmoothRoundRectFilled(
+      draw, ImVec2(rail_left, track_y - track_h * 0.5f), ImVec2(rail_right, track_y + track_h * 0.5f),
+      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.06f * alpha)), track_rounding,
+      ImDrawFlags_RoundCornersAll, 16);
   if (pearl_x > rail_left + 0.5f) {
-    draw->AddRectFilled(ImVec2(rail_left, track_y - track_h * 0.5f),
-                        ImVec2(pearl_x, track_y + track_h * 0.5f),
-                        ImGui::GetColorU32(ImVec4(0.38f, 0.38f, 0.41f, alpha)), track_rounding);
+    theme::DrawSmoothRoundRectFilled(
+        draw, ImVec2(rail_left, track_y - track_h * 0.5f), ImVec2(pearl_x, track_y + track_h * 0.5f),
+        ImGui::GetColorU32(ImVec4(0.38f, 0.38f, 0.41f, alpha)), track_rounding,
+        ImDrawFlags_RoundCornersAll, 16);
   }
 
   // Pearl bead on the fill tip — lighter than the fill so it actually reads.
@@ -344,17 +355,23 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   const ImVec2 pearl_min(pearl_x - pearl_w * 0.5f, track_y - pearl_h * 0.5f);
   const ImVec2 pearl_max(pearl_x + pearl_w * 0.5f, track_y + pearl_h * 0.5f);
   const float pearl_r = pearl_h * 0.5f;
-  draw->AddRectFilled(ImVec2(pearl_min.x, pearl_min.y + 0.7f * scale),
-                      ImVec2(pearl_max.x, pearl_max.y + 0.7f * scale),
-                      ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.30f * alpha)), pearl_r);
+  theme::DrawSmoothRoundRectFilled(
+      draw, ImVec2(pearl_min.x, pearl_min.y + 0.7f * scale),
+      ImVec2(pearl_max.x, pearl_max.y + 0.7f * scale),
+      ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.30f * alpha)), pearl_r,
+      ImDrawFlags_RoundCornersAll, 16);
   const ImVec4 pearl_body = detail::MixColor(ImVec4(0.78f, 0.78f, 0.81f, alpha),
                                              ImVec4(0.88f, 0.88f, 0.90f, alpha), pearl_state);
-  draw->AddRectFilled(pearl_min, pearl_max, ImGui::GetColorU32(pearl_body), pearl_r);
-  draw->AddRectFilled(ImVec2(pearl_min.x + 1.2f * scale, pearl_min.y + 1.0f * scale),
-                      ImVec2(pearl_max.x - 1.2f * scale, track_y),
-                      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.18f * alpha)), pearl_r * 0.75f);
-  draw->AddRect(pearl_min, pearl_max, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.16f * alpha)),
-                pearl_r, 0, std::max(1.0f, scale));
+  theme::DrawSmoothRoundRectFilled(draw, pearl_min, pearl_max, ImGui::GetColorU32(pearl_body),
+                                   pearl_r, ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectFilled(
+      draw, ImVec2(pearl_min.x + 1.2f * scale, pearl_min.y + 1.0f * scale),
+      ImVec2(pearl_max.x - 1.2f * scale, track_y),
+      ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.18f * alpha)), pearl_r * 0.75f,
+      ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectOutline(
+      draw, pearl_min, pearl_max, ImGui::GetColorU32(ImVec4(0.0f, 0.0f, 0.0f, 0.16f * alpha)),
+      pearl_r, std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
 
   const std::string display =
       std::format("{:.{}f}{}", *value * display_multiplier, display_precision, display_suffix);
@@ -367,9 +384,10 @@ bool Slider(const MotionContext& motion, const char* id, const char* label, floa
   const float box_rounding = 3.0f * scale;
   if (value_hover > 0.01f || *mode > 0) {
     const float chip_a = std::max(value_hover, *mode > 0 ? 1.0f : 0.0f);
-    draw->AddRectFilled(value_box_min, value_box_max,
-                        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.06f * chip_a * alpha)),
-                        box_rounding);
+    theme::DrawSmoothRoundRectFilled(
+        draw, value_box_min, value_box_max,
+        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.06f * chip_a * alpha)), box_rounding,
+        ImDrawFlags_RoundCornersAll, 16);
   }
 
   if (*mode == 0) {
@@ -423,8 +441,10 @@ bool SegmentSelector(const MotionContext& motion, const char* id,
   // Same elevated track as combo fields.
   track_bg = ImVec4(0.10f, 0.10f, 0.11f, alpha);
   track_border = ImVec4(0.22f, 0.22f, 0.24f, alpha);
-  draw->AddRectFilled(min, max, ImGui::GetColorU32(track_bg), rounding);
-  draw->AddRect(min, max, ImGui::GetColorU32(track_border), rounding, 0, std::max(1.0f, scale));
+  theme::DrawSmoothRoundRectFilled(draw, min, max, ImGui::GetColorU32(track_bg), rounding,
+                                   ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectOutline(draw, min, max, ImGui::GetColorU32(track_border), rounding,
+                                    std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
 
   const float inset = 3.0f * scale;
   const float target_x = static_cast<float>(*selected) * segment_width;
@@ -437,9 +457,11 @@ bool SegmentSelector(const MotionContext& motion, const char* id,
   const float pill_rounding = std::max(2.0f * scale, rounding - 2.0f * scale);
 
   ImVec4 pill_bg(0.18f, 0.18f, 0.20f, alpha);
-  draw->AddRectFilled(pill_min, pill_max, ImGui::GetColorU32(pill_bg), pill_rounding);
-  draw->AddRect(pill_min, pill_max, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.08f * alpha)),
-                pill_rounding, 0, std::max(1.0f, scale));
+  theme::DrawSmoothRoundRectFilled(draw, pill_min, pill_max, ImGui::GetColorU32(pill_bg),
+                                   pill_rounding, ImDrawFlags_RoundCornersAll, 16);
+  theme::DrawSmoothRoundRectOutline(
+      draw, pill_min, pill_max, ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, 0.08f * alpha)),
+      pill_rounding, std::max(1.0f, scale), ImDrawFlags_RoundCornersAll, 16);
 
   for (int index = 0; index < static_cast<int>(labels.size()); ++index) {
     const ImVec2 segment_min(min.x + segment_width * static_cast<float>(index), min.y);
@@ -461,9 +483,10 @@ bool SegmentSelector(const MotionContext& motion, const char* id,
                                    hovered ? 1.0f : 0.0f, motion.tokens.hover_fast, 0.0f);
     if (hover_val > 0.0f && *selected != index) {
       ImVec4 hover_glow(1.0f, 1.0f, 1.0f, 0.03f * hover_val * alpha);
-      draw->AddRectFilled(ImVec2(segment_min.x + inset, segment_min.y + inset),
-                          ImVec2(segment_max.x - inset, segment_max.y - inset),
-                          ImGui::GetColorU32(hover_glow), pill_rounding);
+      theme::DrawSmoothRoundRectFilled(
+          draw, ImVec2(segment_min.x + inset, segment_min.y + inset),
+          ImVec2(segment_max.x - inset, segment_max.y - inset), ImGui::GetColorU32(hover_glow),
+          pill_rounding, ImDrawFlags_RoundCornersAll, 16);
     }
 
     const bool is_active = (*selected == index);

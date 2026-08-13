@@ -371,7 +371,8 @@ bool SettingsWindow::CreateRenderWindow(HINSTANCE instance) {
   const UINT dpi = GetDpiForSystem();
   const int width = MulDiv(kWindowWidth, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
   const int height = MulDiv(kWindowHeight, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
-  hwnd_ = CreateWindowExW(WS_EX_APPWINDOW, kSettingsWindowClass, L"Minimize Effect",
+  hwnd_ = CreateWindowExW(WS_EX_APPWINDOW | WS_EX_LAYERED, kSettingsWindowClass,
+                          L"Minimize Effect",
                           WS_POPUP | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU, CW_USEDEFAULT,
                           CW_USEDEFAULT, width, height, nullptr, nullptr, instance, this);
   if (old_context != nullptr) SetThreadDpiAwarenessContext(old_context);
@@ -380,27 +381,30 @@ bool SettingsWindow::CreateRenderWindow(HINSTANCE instance) {
 
   current_dpi_ = GetDpiForWindow(hwnd_);
   ui_scale_ = static_cast<float>(current_dpi_) / USER_DEFAULT_SCREEN_DPI;
-  ApplyWindowShape(width, height);
-  const DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_ROUND;
+  // The shell draws its own radius and outline. Letting DWM apply its fixed Windows radius as
+  // well leaves the old, tighter curve visible behind the custom one.
+  const DWM_WINDOW_CORNER_PREFERENCE corner_preference = DWMWCP_DONOTROUND;
   DwmSetWindowAttribute(hwnd_, DWMWA_WINDOW_CORNER_PREFERENCE, &corner_preference,
                         sizeof(corner_preference));
-  const MARGINS margins{-1};
-  DwmExtendFrameIntoClientArea(hwnd_, &margins);
+  constexpr DWORD kDwmWindowAttributeBorderColor = 34;
+  constexpr DWORD kDwmColorNone = 0xFFFFFFFE;
+  DwmSetWindowAttribute(hwnd_, static_cast<DWMWINDOWATTRIBUTE>(kDwmWindowAttributeBorderColor),
+                        &kDwmColorNone, sizeof(kDwmColorNone));
+  ApplyWindowShape(width, height);
   const BOOL dark_mode = TRUE;
   DwmSetWindowAttribute(hwnd_, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */, &dark_mode,
                         sizeof(dark_mode));
-  const DWORD mica_backdrop = 2;  // DWMSBT_MAINWINDOW, matching ImGuiBase.
-  if (FAILED(DwmSetWindowAttribute(hwnd_, 38 /* DWMWA_SYSTEMBACKDROP_TYPE */, &mica_backdrop,
-                                   sizeof(mica_backdrop)))) {
-    const DWORD legacy_mica = 1;
-    DwmSetWindowAttribute(hwnd_, 1029 /* DWMWA_MICA_EFFECT */, &legacy_mica, sizeof(legacy_mica));
-  }
   return true;
 }
 
 void SettingsWindow::ApplyWindowShape(int width, int height) {
   (void)width;
   (void)height;
+  if (hwnd_ == nullptr) return;
+
+  // DirectComposition on WS_EX_LAYERED handles per-pixel alpha transparency and anti-aliasing
+  // natively. Setting a GDI window region creates a 1-bit binary mask that causes jagged pixelation
+  // on rounded corners. Ensure no region mask is applied.
   SetWindowRgn(hwnd_, nullptr, TRUE);
 }
 

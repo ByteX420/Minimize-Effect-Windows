@@ -1,4 +1,4 @@
-﻿#include "pch.hpp"
+#include "pch.hpp"
 
 #include "ui/theme/theme.hpp"
 
@@ -102,14 +102,150 @@ void DrawGradientShadow(ImDrawList* draw, ImVec2 min, ImVec2 max, float radius, 
                 IM_COL32(0, 0, 0, static_cast<int>(alpha * 40.0f)), 0.0f, 0, 1.0f);
 }
 
+void PathSmoothRoundRect(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding,
+                         ImDrawFlags flags, int segments) {
+  if (!draw) return;
+
+  if ((flags & ImDrawFlags_RoundCornersMask_) == 0) {
+    flags |= ImDrawFlags_RoundCornersAll;
+  }
+
+  const float width = std::abs(max.x - min.x);
+  const float height = std::abs(max.y - min.y);
+  if (width <= 0.0f || height <= 0.0f) return;
+
+  const float max_r = (std::min)(width * 0.5f, height * 0.5f);
+  const float clamped_rounding = (std::min)(rounding, max_r);
+
+  if (clamped_rounding < 0.5f || (flags & ImDrawFlags_RoundCornersMask_) == ImDrawFlags_RoundCornersNone) {
+    draw->PathLineTo(min);
+    draw->PathLineTo(ImVec2(max.x, min.y));
+    draw->PathLineTo(max);
+    draw->PathLineTo(ImVec2(min.x, max.y));
+    return;
+  }
+
+  constexpr float kPi = 3.14159265358979323846f;
+  const int seg = segments > 0 ? segments : std::clamp(static_cast<int>(clamped_rounding * 1.5f), 4, 16);
+
+  const float tl = (flags & ImDrawFlags_RoundCornersTopLeft) ? clamped_rounding : 0.0f;
+  const float tr = (flags & ImDrawFlags_RoundCornersTopRight) ? clamped_rounding : 0.0f;
+  const float br = (flags & ImDrawFlags_RoundCornersBottomRight) ? clamped_rounding : 0.0f;
+  const float bl = (flags & ImDrawFlags_RoundCornersBottomLeft) ? clamped_rounding : 0.0f;
+
+  // Vertical capsule (e.g. scrollbar thumb, vertical pill): top and bottom form seamless semicircles.
+  if ((flags & ImDrawFlags_RoundCornersAll) == ImDrawFlags_RoundCornersAll &&
+      tl == clamped_rounding && tr == clamped_rounding && br == clamped_rounding && bl == clamped_rounding &&
+      std::abs(width - 2.0f * clamped_rounding) <= 0.5f && height >= width) {
+    const float mid_x = (min.x + max.x) * 0.5f;
+    const float r = clamped_rounding;
+    const int semi_seg = std::max(4, seg);
+    draw->PathArcTo(ImVec2(mid_x, min.y + r), r, kPi, kPi * 2.0f, semi_seg);
+    draw->PathArcTo(ImVec2(mid_x, max.y - r), r, 0.0f, kPi, semi_seg);
+    return;
+  }
+
+  // Horizontal capsule (e.g. switch track, horizontal pill): left and right form seamless semicircles.
+  if ((flags & ImDrawFlags_RoundCornersAll) == ImDrawFlags_RoundCornersAll &&
+      tl == clamped_rounding && tr == clamped_rounding && br == clamped_rounding && bl == clamped_rounding &&
+      std::abs(height - 2.0f * clamped_rounding) <= 0.5f && width >= height) {
+    const float mid_y = (min.y + max.y) * 0.5f;
+    const float r = clamped_rounding;
+    const int semi_seg = std::max(4, seg);
+    draw->PathArcTo(ImVec2(max.x - r, mid_y), r, kPi * 1.5f, kPi * 2.5f, semi_seg);
+    draw->PathArcTo(ImVec2(min.x + r, mid_y), r, kPi * 0.5f, kPi * 1.5f, semi_seg);
+    return;
+  }
+
+  if (tl > 0.0f) {
+    draw->PathArcTo(ImVec2(min.x + tl, min.y + tl), tl, kPi, kPi * 1.5f, seg);
+  } else {
+    draw->PathLineTo(min);
+  }
+  if (tr > 0.0f) {
+    draw->PathArcTo(ImVec2(max.x - tr, min.y + tr), tr, kPi * 1.5f, kPi * 2.0f, seg);
+  } else {
+    draw->PathLineTo(ImVec2(max.x, min.y));
+  }
+  if (br > 0.0f) {
+    draw->PathArcTo(ImVec2(max.x - br, max.y - br), br, 0.0f, kPi * 0.5f, seg);
+  } else {
+    draw->PathLineTo(max);
+  }
+  if (bl > 0.0f) {
+    draw->PathArcTo(ImVec2(min.x + bl, max.y - bl), bl, kPi * 0.5f, kPi, seg);
+  } else {
+    draw->PathLineTo(ImVec2(min.x, max.y));
+  }
+}
+
+void DrawSmoothRoundRectFilled(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 col, float rounding,
+                               ImDrawFlags flags, int segments) {
+  if (!draw || (col & IM_COL32_A_MASK) == 0) return;
+  if (rounding < 0.5f) {
+    draw->AddRectFilled(min, max, col);
+    return;
+  }
+  PathSmoothRoundRect(draw, min, max, rounding, flags, segments);
+  draw->PathFillConvex(col);
+}
+
+void DrawSmoothRoundRectOutline(ImDrawList* draw, ImVec2 min, ImVec2 max, ImU32 col, float rounding,
+                                float stroke, ImDrawFlags flags, int segments) {
+  if (!draw || (col & IM_COL32_A_MASK) == 0 || stroke <= 0.0f) return;
+  if (rounding < 0.5f) {
+    draw->AddRect(min, max, col, 0.0f, 0, stroke);
+    return;
+  }
+  const float half_stroke = stroke * 0.5f;
+  const ImVec2 outline_min(min.x + half_stroke, min.y + half_stroke);
+  const ImVec2 outline_max(max.x - half_stroke, max.y - half_stroke);
+  const float outline_round = std::max(0.0f, rounding - half_stroke);
+  PathSmoothRoundRect(draw, outline_min, outline_max, outline_round, flags, segments);
+  draw->PathStroke(col, ImDrawFlags_Closed, stroke);
+}
+
+void DrawWindowOutline(ImDrawList* draw, ImVec2 min, ImVec2 max, float rounding, float scale,
+                       float alpha) {
+  if (!draw || alpha <= 0.001f) return;
+
+  const float stroke = std::max(1.0f, scale);
+  const float half_stroke = stroke * 0.5f;
+
+  // Center the stroke half_stroke within the window perimeter so the outer boundary aligns
+  // smoothly with the window background and maintains uniform thickness everywhere.
+  const ImVec2 outline_min(min.x + half_stroke, min.y + half_stroke);
+  const ImVec2 outline_max(max.x - half_stroke, max.y - half_stroke);
+  const float outline_round = std::max(0.0f, rounding - half_stroke);
+
+  // 1. Apple macOS primary perimeter stroke: subtle translucent zinc/white outline.
+  // Using 16 segments per corner guarantees smooth continuous arcs with zero faceting or pixelation.
+  const ImU32 perimeter_color =
+      IM_COL32(255, 255, 255, static_cast<int>(std::clamp(alpha * 36.0f, 0.0f, 255.0f)));
+  PathSmoothRoundRect(draw, outline_min, outline_max, outline_round, ImDrawFlags_RoundCornersAll, 16);
+  draw->PathStroke(perimeter_color, ImDrawFlags_Closed, stroke);
+
+  // 2. Apple macOS subtle specular highlight on the top edge (simulates top ambient illumination).
+  const float top_inset = rounding;
+  if (outline_max.x - outline_min.x > top_inset * 2.0f) {
+    const ImU32 specular_color =
+        IM_COL32(255, 255, 255, static_cast<int>(std::clamp(alpha * 20.0f, 0.0f, 255.0f)));
+    draw->AddLine(ImVec2(outline_min.x + top_inset, outline_min.y),
+                  ImVec2(outline_max.x - top_inset, outline_min.y), specular_color, stroke);
+  }
+}
+
 void DrawCard(ImDrawList* draw, ImVec2 min, ImVec2 max, float scale, float alpha) {
   const float rounding = Metrics::kCardRounding * scale;
+  const float stroke = std::max(1.0f, scale);
   ImVec4 panel = ui::theme::kPanelColor;
   panel.w *= alpha;
   ImVec4 border = ui::theme::kBorderColor;
   border.w *= 0.85f * alpha;
-  draw->AddRectFilled(min, max, ImGui::GetColorU32(panel), rounding);
-  draw->AddRect(min, max, ImGui::GetColorU32(border), rounding, 0, std::max(1.0f, scale));
+  DrawSmoothRoundRectFilled(draw, min, max, ImGui::GetColorU32(panel), rounding,
+                            ImDrawFlags_RoundCornersAll, 16);
+  DrawSmoothRoundRectOutline(draw, min, max, ImGui::GetColorU32(border), rounding, stroke,
+                             ImDrawFlags_RoundCornersAll, 16);
 }
 
 void DrawSeparator(ImDrawList* draw, ImVec2 min, ImVec2 max, float alpha) {
@@ -229,8 +365,9 @@ bool SidebarItem(const motion::MotionContext& motion, const char* id, const char
   const float rounding = 8.0f * scale;
   if (!selected && hover > 0.001f) {
     const float fill_alpha = 0.05f * hover * (1.0f - 0.35f * press);
-    draw->AddRectFilled(position, ImVec2(position.x + size.x, position.y + size.y),
-                        ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill_alpha * alpha)), rounding);
+    DrawSmoothRoundRectFilled(draw, position, ImVec2(position.x + size.x, position.y + size.y),
+                              ImGui::GetColorU32(ImVec4(1.0f, 1.0f, 1.0f, fill_alpha * alpha)),
+                              rounding, ImDrawFlags_RoundCornersAll, 16);
   }
 
   // Weight rule: selected nav uses SemiBold (emphasis), idle uses Regular.

@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <d3d11.h>
+#include <dcomp.h>
 #include <dxgi.h>
 #include <dxgi1_3.h>
 #include <windows.h>
@@ -47,8 +48,11 @@ private:
   HWND window_ = nullptr;
   Microsoft::WRL::ComPtr<ID3D11Device> device_;
   Microsoft::WRL::ComPtr<ID3D11DeviceContext> context_;
-  Microsoft::WRL::ComPtr<IDXGISwapChain> swap_chain_;
+  Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;
   Microsoft::WRL::ComPtr<ID3D11RenderTargetView> render_target_view_;
+  Microsoft::WRL::ComPtr<IDCompositionDevice> composition_device_;
+  Microsoft::WRL::ComPtr<IDCompositionTarget> composition_target_;
+  Microsoft::WRL::ComPtr<IDCompositionVisual> composition_visual_;
   HANDLE frame_latency_waitable_object_ = nullptr;
   UINT swap_chain_flags_ = 0;
   bool context_ready_ = false;
